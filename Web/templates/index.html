@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>chan.py 单股缠论图</title>
+  <script src="{{ echarts_js_url }}"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --line: #d8dde8;
+      --text: #172033;
+      --muted: #697386;
+      --accent: #2364aa;
+      --danger: #b42318;
+      --up: #d62728;
+      --down: #188038;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+      font-size: 14px;
+    }
+
+    .app-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 18px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand {
+      min-width: 170px;
+      font-weight: 700;
+      font-size: 17px;
+      white-space: nowrap;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    input,
+    select,
+    button {
+      height: 34px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+    }
+
+    input,
+    select {
+      padding: 0 9px;
+    }
+
+    input[type="date"] {
+      min-width: 138px;
+    }
+
+    .code-input {
+      width: 116px;
+    }
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 86px;
+      padding: 0 14px;
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button:disabled {
+      opacity: 0.65;
+      cursor: wait;
+    }
+
+    main {
+      padding: 12px 18px 18px;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 270px;
+      gap: 12px;
+      height: calc(100vh - 91px);
+      min-height: 520px;
+    }
+
+    .chart-wrap {
+      position: relative;
+      min-height: 0;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    #chart {
+      width: 100%;
+      height: 100%;
+    }
+
+    .info-panel {
+      position: absolute;
+      z-index: 5;
+      top: 12px;
+      left: 12px;
+      min-width: 390px;
+      max-width: min(680px, calc(100% - 24px));
+      padding: 9px 10px;
+      background: rgba(255, 255, 255, 0.94);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      box-shadow: 0 10px 22px rgba(17, 24, 39, 0.08);
+      pointer-events: none;
+    }
+
+    .info-title {
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(66px, auto));
+      gap: 5px 12px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .info-grid b {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .info-grid .price-up b,
+    .signal-buy {
+      color: var(--up);
+    }
+
+    .info-grid .price-down b,
+    .signal-sell {
+      color: var(--down);
+    }
+
+    .info-grid .ma5 b {
+      color: #f59e0b;
+    }
+
+    .info-grid .ma10 b {
+      color: #2563eb;
+    }
+
+    .info-grid .ma20 b {
+      color: #7c3aed;
+    }
+
+    .info-grid .ma30 b {
+      color: #0f766e;
+    }
+
+    .side-panel {
+      min-height: 0;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      overflow: hidden;
+    }
+
+    .side-title {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      font-weight: 700;
+    }
+
+    .signal-list {
+      overflow: auto;
+      padding: 8px;
+    }
+
+    .signal-empty {
+      color: var(--muted);
+      padding: 10px 6px;
+      line-height: 1.6;
+    }
+
+    .signal-item {
+      border-bottom: 1px solid #eef1f6;
+      padding: 9px 6px;
+      cursor: pointer;
+    }
+
+    .signal-item:hover,
+    .signal-item.active {
+      background: #f3f6fb;
+      border-radius: 6px;
+    }
+
+    .signal-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .signal-date {
+      color: var(--text);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .signal-badge {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .signal-meta {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .message {
+      position: absolute;
+      z-index: 6;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(247, 248, 251, 0.72);
+      text-align: center;
+      padding: 24px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .message.error {
+      color: var(--danger);
+    }
+
+    .chart-legend {
+      position: absolute;
+      z-index: 5;
+      top: 12px;
+      right: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px 12px;
+      max-width: min(680px, calc(100% - 540px));
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      box-shadow: 0 10px 22px rgba(17, 24, 39, 0.06);
+      font-size: 12px;
+      pointer-events: none;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .legend-line {
+      width: 20px;
+      height: 0;
+      border-top: 3px solid var(--legend-color);
+    }
+
+    .legend-line.thin {
+      border-top-width: 2px;
+    }
+
+    .legend-box {
+      width: 18px;
+      height: 10px;
+      border-radius: 2px;
+      background: var(--legend-color);
+      opacity: 0.18;
+      border: 1px solid var(--legend-color);
+    }
+
+    .legend-candle {
+      width: 16px;
+      height: 12px;
+      border: 2px solid var(--up);
+      border-radius: 2px;
+      position: relative;
+      background: rgba(214, 39, 40, 0.14);
+    }
+
+    .legend-candle::before,
+    .legend-candle::after {
+      content: "";
+      position: absolute;
+      left: 5px;
+      width: 2px;
+      background: var(--up);
+    }
+
+    .legend-candle::before {
+      height: 7px;
+      top: -8px;
+    }
+
+    .legend-candle::after {
+      height: 7px;
+      bottom: -8px;
+    }
+
+    .legend-triangle {
+      width: 0;
+      height: 0;
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+      border-bottom: 11px solid var(--legend-color);
+    }
+
+    .legend-triangle.down {
+      border-bottom: 0;
+      border-top: 11px solid var(--legend-color);
+    }
+
+    @media (max-width: 760px) {
+      .topbar {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .controls {
+        justify-content: flex-start;
+      }
+
+      .workspace {
+        grid-template-columns: 1fr;
+        height: calc(100vh - 190px);
+      }
+
+      .side-panel {
+        min-height: 220px;
+      }
+
+      .info-panel {
+        min-width: 0;
+      }
+
+      .info-grid {
+        grid-template-columns: repeat(2, minmax(98px, auto));
+      }
+
+      .chart-legend {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">chan.py 单股缠论图</div>
+      <form id="chart-form" class="controls">
+        <label>
+          代码
+          <input id="code" class="code-input" name="code" value="{{ default_code }}" autocomplete="off" spellcheck="false" inputmode="numeric" pattern="[0-9]{6}">
+        </label>
+        <label>
+          级别
+          <select id="level" name="level">
+            <option value="day" selected>日线</option>
+            <option value="week">周线</option>
+            <option value="month">月线</option>
+          </select>
+        </label>
+        <label>
+          开始
+          <input id="start" name="start" type="date" value="{{ default_start }}">
+        </label>
+        <label>
+          结束
+          <input id="end" name="end" type="date" value="{{ default_end }}">
+        </label>
+        <button id="submit-btn" type="submit">生成图表</button>
+      </form>
+    </header>
+
+    <main>
+      <div class="workspace">
+        <section class="chart-wrap">
+          <div id="info" class="info-panel"></div>
+          <div class="chart-legend">
+            <span class="legend-item"><i class="legend-candle"></i>K线</span>
+            <span class="legend-item"><i class="legend-line thin" style="--legend-color:#f59e0b"></i>MA5</span>
+            <span class="legend-item"><i class="legend-line thin" style="--legend-color:#2563eb"></i>MA10</span>
+            <span class="legend-item"><i class="legend-line thin" style="--legend-color:#7c3aed"></i>MA20</span>
+            <span class="legend-item"><i class="legend-line thin" style="--legend-color:#0f766e"></i>MA30</span>
+            <span class="legend-item"><i class="legend-line" style="--legend-color:#111827"></i>笔</span>
+            <span class="legend-item"><i class="legend-line" style="--legend-color:#e11d48"></i>线段</span>
+            <span class="legend-item"><i class="legend-box" style="--legend-color:#2563eb"></i>中枢</span>
+            <span class="legend-item"><i class="legend-box" style="--legend-color:#7c3aed"></i>线段中枢</span>
+            <span class="legend-item"><i class="legend-triangle" style="--legend-color:#d62728"></i>买点</span>
+            <span class="legend-item"><i class="legend-triangle down" style="--legend-color:#188038"></i>卖点</span>
+          </div>
+          <div id="chart"></div>
+          <div id="message" class="message"></div>
+        </section>
+        <aside class="side-panel">
+          <div class="side-title">买卖点</div>
+          <div id="signal-list" class="signal-list"></div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const form = document.getElementById("chart-form");
+    const chartEl = document.getElementById("chart");
+    const message = document.getElementById("message");
+    const info = document.getElementById("info");
+    const signalList = document.getElementById("signal-list");
+    const submitBtn = document.getElementById("submit-btn");
+
+    let chart = null;
+    let activeCandles = [];
+    let activeMa = {};
+    let activeSignals = [];
+
+    function fmt(value, digits = 2) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) {
+        return "-";
+      }
+      return Number(value).toFixed(digits);
+    }
+
+    function fmtVolume(value) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) {
+        return "-";
+      }
+      const num = Number(value);
+      if (Math.abs(num) >= 100000000) {
+        return `${(num / 100000000).toFixed(2)}亿`;
+      }
+      if (Math.abs(num) >= 10000) {
+        return `${(num / 10000).toFixed(2)}万`;
+      }
+      return num.toFixed(0);
+    }
+
+    function showMessage(text, isError = false) {
+      message.textContent = text;
+      message.classList.toggle("error", isError);
+      message.style.display = text ? "flex" : "none";
+    }
+
+    function setLoading(isLoading) {
+      submitBtn.disabled = isLoading;
+      submitBtn.textContent = isLoading ? "生成中" : "生成图表";
+      if (isLoading) {
+        showMessage("正在下载行情并计算缠论结构...");
+      }
+    }
+
+    function normalizeCodeInput() {
+      let value = document.getElementById("code").value.trim().toLowerCase();
+      value = value.replace(/^(sh|sz)\./, "");
+      value = value.replace(/\D/g, "").slice(0, 6);
+      document.getElementById("code").value = value;
+    }
+
+    function ensureChart() {
+      if (!chart) {
+        chart = echarts.init(chartEl, null, {renderer: "canvas"});
+      }
+      return chart;
+    }
+
+    function updateInfo(idx) {
+      const candle = activeCandles[idx] || activeCandles[activeCandles.length - 1];
+      if (!candle) {
+        info.innerHTML = "";
+        return;
+      }
+      const i = candle.idx;
+      const priceClass = candle.close >= candle.open ? "price-up" : "price-down";
+      info.innerHTML = `
+        <div class="info-title">${candle.time}</div>
+        <div class="info-grid">
+          <span>开 <b>${fmt(candle.open)}</b></span>
+          <span class="price-up">高 <b>${fmt(candle.high)}</b></span>
+          <span class="price-down">低 <b>${fmt(candle.low)}</b></span>
+          <span class="${priceClass}">收 <b>${fmt(candle.close)}</b></span>
+          <span>量 <b>${fmtVolume(candle.volume)}</b></span>
+          <span class="ma5">MA5 <b>${fmt(activeMa.ma5?.[i])}</b></span>
+          <span class="ma10">MA10 <b>${fmt(activeMa.ma10?.[i])}</b></span>
+          <span class="ma20">MA20 <b>${fmt(activeMa.ma20?.[i])}</b></span>
+          <span class="ma30">MA30 <b>${fmt(activeMa.ma30?.[i])}</b></span>
+        </div>
+      `;
+      document.querySelectorAll(".signal-item").forEach(item => {
+        item.classList.toggle("active", Number(item.dataset.idx) === i);
+      });
+    }
+
+    function collectSignals(elements) {
+      return [
+        ...(elements.bsp || []),
+        ...(elements.seg_bsp || [])
+      ].map(item => {
+        const candle = activeCandles[item.x] || {};
+        return {
+          ...item,
+          time: candle.time || "-",
+          close: candle.close,
+          kind: item.is_seg ? "线段买卖点" : "买卖点"
+        };
+      }).sort((a, b) => b.x - a.x);
+    }
+
+    function renderSignalList() {
+      if (!activeSignals.length) {
+        signalList.innerHTML = `<div class="signal-empty">当前范围内暂无买卖点。</div>`;
+        return;
+      }
+      signalList.innerHTML = activeSignals.map(item => `
+        <div class="signal-item" data-idx="${item.x}">
+          <div class="signal-row">
+            <span class="signal-date">${item.time}</span>
+            <span class="signal-badge ${item.is_buy ? "signal-buy" : "signal-sell"}">${item.label}</span>
+          </div>
+          <div class="signal-meta">${item.kind} · K线序号 ${item.x}</div>
+          <div class="signal-meta">价格 ${fmt(item.y)} · 收盘 ${fmt(item.close)}</div>
+        </div>
+      `).join("");
+      signalList.querySelectorAll(".signal-item").forEach(item => {
+        item.addEventListener("click", () => {
+          const idx = Number(item.dataset.idx);
+          updateInfo(idx);
+          ensureChart().dispatchAction({
+            type: "dataZoom",
+            startValue: Math.max(0, idx - 40),
+            endValue: Math.min(activeCandles.length - 1, idx + 40)
+          });
+        });
+      });
+    }
+
+    function applyRuntimeFormatters(option, payload) {
+      const tickLabels = new Map((payload.date_ticks || []).map(item => [String(item.value), item.label]));
+      const xAxis = Array.isArray(option.xAxis) ? option.xAxis[0] : option.xAxis;
+      xAxis.axisLabel = {
+        ...(xAxis.axisLabel || {}),
+        interval: (_index, value) => tickLabels.has(String(value)),
+        formatter: value => tickLabels.get(String(value)) || ""
+      };
+      xAxis.axisPointer = {
+        show: true,
+        type: "line",
+        snap: true,
+        lineStyle: {color: "#697386", width: 1, type: "dashed"},
+        label: {show: false}
+      };
+
+      const yAxis = Array.isArray(option.yAxis) ? option.yAxis[0] : option.yAxis;
+      yAxis.axisPointer = {
+        show: true,
+        type: "line",
+        lineStyle: {color: "#697386", width: 1, type: "dashed"},
+        label: {show: true, precision: 2}
+      };
+
+      option.tooltip = {
+        ...(option.tooltip || {}),
+        trigger: "axis",
+        showContent: false,
+        axisPointer: {
+          type: "cross",
+          snap: true,
+          lineStyle: {color: "#697386", width: 1, type: "dashed"},
+          crossStyle: {color: "#697386", width: 1, type: "dashed"},
+          label: {show: false}
+        }
+      };
+
+      return option;
+    }
+
+    function bindChartEvents() {
+      const instance = ensureChart();
+      instance.off("updateAxisPointer");
+      instance.on("updateAxisPointer", params => {
+        const xAxisInfo = (params.axesInfo || []).find(item => item.axisDim === "x");
+        if (!xAxisInfo) {
+          return;
+        }
+        const idx = Number(xAxisInfo.value);
+        if (Number.isInteger(idx) && idx >= 0 && idx < activeCandles.length) {
+          updateInfo(idx);
+        }
+      });
+    }
+
+    function renderChart(payload) {
+      activeCandles = payload.candles || [];
+      activeMa = payload.ma || {};
+      activeSignals = collectSignals(payload.elements || {});
+      renderSignalList();
+
+      const option = applyRuntimeFormatters(payload.chart_options, payload);
+      const instance = ensureChart();
+      instance.clear();
+      instance.setOption(option, true);
+      bindChartEvents();
+      updateInfo(activeCandles.length - 1);
+    }
+
+    async function loadChart() {
+      const params = new URLSearchParams(new FormData(form));
+      setLoading(true);
+      try {
+        const response = await fetch(`/api/chart?${params.toString()}`);
+        const payload = await response.json();
+        if (!response.ok || !payload.success) {
+          throw new Error(payload.error || "生成图表失败");
+        }
+        showMessage("");
+        renderChart(payload);
+      } catch (error) {
+        showMessage(error.message, true);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      normalizeCodeInput();
+      loadChart();
+    });
+
+    document.getElementById("code").addEventListener("blur", normalizeCodeInput);
+
+    window.addEventListener("resize", () => {
+      if (chart) {
+        chart.resize();
+      }
+    });
+
+    loadChart();
+  </script>
+</body>
+</html>
