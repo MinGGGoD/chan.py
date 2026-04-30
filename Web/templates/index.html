@@ -3,24 +3,38 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>chan.py 单股缠论图</title>
+  <title>chan.py 缠论助手</title>
   <script src="{{ echarts_js_url }}"></script>
   <style>
     :root {
-      color-scheme: light;
-      --bg: #f7f8fb;
-      --panel: #ffffff;
-      --line: #d8dde8;
-      --text: #172033;
-      --muted: #697386;
-      --accent: #2364aa;
-      --danger: #b42318;
-      --up: #d62728;
-      --down: #188038;
+      color-scheme: dark;
+      --bg: #0b0d14;
+      --bar: #111424;
+      --panel: #141827;
+      --panel-soft: #182033;
+      --panel-deep: #101522;
+      --line: #283149;
+      --line-soft: #20283c;
+      --text: #eef3ff;
+      --muted: #8e99b2;
+      --accent: #3da0ff;
+      --accent-strong: #4aa8ff;
+      --accent-warm: #ff8a1f;
+      --danger: #ff5c70;
+      --up: #ff4d4f;
+      --down: #18c7b7;
+      --gold: #f3c842;
+      --violet: #a772ff;
+      --good: #68d36f;
     }
 
     * {
       box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
     }
 
     body {
@@ -29,113 +43,594 @@
       color: var(--text);
       font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
       font-size: 14px;
+      overflow: hidden;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
     }
 
     .app-shell {
-      min-height: 100vh;
+      height: 100vh;
+      min-height: 0;
       display: grid;
-      grid-template-rows: auto 1fr;
+      grid-template-rows: 50px 1fr 32px;
+      background: radial-gradient(circle at top left, rgba(61, 160, 255, 0.08), transparent 34%),
+        linear-gradient(180deg, #0c0f19 0%, #090b12 100%);
+      overflow: hidden;
     }
 
     .topbar {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
-      padding: 12px 18px;
-      background: var(--panel);
-      border-bottom: 1px solid var(--line);
+      gap: 18px;
+      padding: 0 18px 0 22px;
+      background: var(--bar);
+      border-bottom: 1px solid #24304c;
     }
 
     .brand {
-      min-width: 170px;
-      font-weight: 700;
-      font-size: 17px;
+      display: inline-flex;
+      align-items: baseline;
+      gap: 14px;
+      min-width: 0;
       white-space: nowrap;
     }
 
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 10px;
-    }
-
-    label {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      color: var(--muted);
-      white-space: nowrap;
-    }
-
-    input,
-    select,
-    button {
-      height: 34px;
-      border-radius: 6px;
-      border: 1px solid var(--line);
-      background: #fff;
-      color: var(--text);
-      font: inherit;
-    }
-
-    input,
-    select {
-      padding: 0 9px;
-    }
-
-    input[type="date"] {
-      min-width: 138px;
-    }
-
-    .code-input {
-      width: 116px;
-    }
-
-    button {
+    .brand-main {
       display: inline-flex;
       align-items: center;
-      justify-content: center;
-      min-width: 86px;
-      padding: 0 14px;
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
-      cursor: pointer;
-      font-weight: 600;
+      gap: 9px;
+      color: #ff6f22;
+      font-size: 17px;
+      font-weight: 800;
     }
 
-    button:disabled {
-      opacity: 0.65;
-      cursor: wait;
+    .brand-mark {
+      width: 20px;
+      height: 17px;
+      border-left: 2px solid #ff6f22;
+      border-bottom: 2px solid #ff6f22;
+      position: relative;
+      flex: 0 0 auto;
     }
 
-    main {
-      padding: 12px 18px 18px;
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      left: 3px;
+      bottom: 4px;
+      width: 14px;
+      height: 8px;
+      border-left: 3px solid #ff3f37;
+      border-bottom: 3px solid #ff3f37;
+      transform: skew(-22deg);
+    }
+
+    .brand-sub {
+      color: var(--muted);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .top-status {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 14px;
+      color: var(--muted);
+      font-size: 12px;
+      min-width: 0;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--text);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--good);
+      box-shadow: 0 0 10px rgba(104, 211, 111, 0.55);
+    }
+
+    .status-dot.loading {
+      background: var(--gold);
+      box-shadow: 0 0 10px rgba(243, 200, 66, 0.6);
+    }
+
+    .status-dot.error {
+      background: var(--danger);
+      box-shadow: 0 0 10px rgba(255, 92, 112, 0.6);
     }
 
     .workspace {
+      min-height: 0;
+      height: 100%;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 270px;
+      grid-template-columns: 280px minmax(560px, 1fr) 360px;
       gap: 12px;
-      height: calc(100vh - 91px);
-      min-height: 520px;
+      padding: 12px;
+      overflow: hidden;
     }
 
-    .chart-wrap {
-      position: relative;
+    .left-rail,
+    .right-rail {
       min-height: 0;
-      background: var(--panel);
+      max-height: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    .left-rail {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 100%;
+      max-width: 100%;
+    }
+
+    .left-rail *,
+    .right-rail * {
+      min-width: 0;
+    }
+
+    .panel,
+    .chart-panel {
+      background: rgba(20, 24, 39, 0.94);
       border: 1px solid var(--line);
       border-radius: 8px;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+    }
+
+    .panel {
+      padding: 14px 16px;
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 0 0 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line-soft);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .panel-kicker {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .search-form {
+      display: grid;
+      gap: 14px;
+    }
+
+    .search-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 84px;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .code-input,
+    .date-input {
+      width: 100%;
+      height: 38px;
+      border: 1px solid #33405d;
+      border-radius: 6px;
+      background: #101727;
+      color: var(--text);
+      outline: none;
+    }
+
+    .code-input {
+      padding: 0 12px;
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 0;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .date-input {
+      padding: 0 10px;
+      color-scheme: dark;
+    }
+
+    .code-input:focus,
+    .date-input:focus {
+      border-color: var(--accent-strong);
+      box-shadow: 0 0 0 2px rgba(61, 160, 255, 0.18);
+    }
+
+    .primary-btn,
+    .period-trigger,
+    .period-option,
+    .right-tab,
+    .fit-btn,
+    .history-chip {
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+
+    .primary-btn {
+      height: 38px;
+      border-radius: 6px;
+      background: var(--accent-strong);
+      color: #fff;
+      font-weight: 800;
+    }
+
+    .primary-btn:disabled {
+      opacity: 0.62;
+      cursor: wait;
+    }
+
+    .code-hint {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .code-hint.ok {
+      color: #9cd8ff;
+    }
+
+    .code-hint.error {
+      color: var(--danger);
+    }
+
+    .field-label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .right-tab {
+      height: 34px;
+      border-radius: 6px;
+      background: #111827;
+      color: var(--muted);
+      border: 1px solid #2a354e;
+      font-weight: 800;
+    }
+
+    .right-tab.active {
+      background: rgba(61, 160, 255, 0.15);
+      border-color: var(--accent-strong);
+      color: #79c3ff;
+    }
+
+    .period-select {
+      position: relative;
+      z-index: 12;
+    }
+
+    .period-trigger {
+      width: 100%;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 0 12px;
+      border-radius: 4px;
+      border: 1px solid var(--accent-strong);
+      background: #111827;
+      color: #aeb9cd;
+      text-align: left;
+      font-weight: 700;
+    }
+
+    .period-trigger.active {
+      color: var(--text);
+    }
+
+    .period-caret {
+      width: 8px;
+      height: 8px;
+      border-top: 1px solid #7f8aa3;
+      border-right: 1px solid #7f8aa3;
+      transform: rotate(135deg);
+      transition: transform 0.15s ease;
+      flex: 0 0 auto;
+      margin-right: 2px;
+    }
+
+    .period-select.open .period-caret {
+      transform: rotate(-45deg);
+    }
+
+    .period-menu {
+      position: absolute;
+      top: calc(100% + 12px);
+      left: 0;
+      width: 100%;
+      display: none;
+      padding: 6px 0;
+      border: 1px solid #2a354e;
+      border-radius: 4px;
+      background: #1a1b2d;
+      box-shadow: 0 16px 28px rgba(0, 0, 0, 0.34);
+      overflow: hidden;
+    }
+
+    .period-select.open .period-menu {
+      display: block;
+    }
+
+    .period-menu::before {
+      content: "";
+      position: absolute;
+      top: -7px;
+      left: 50%;
+      width: 12px;
+      height: 12px;
+      background: #1a1b2d;
+      border-left: 1px solid #2a354e;
+      border-top: 1px solid #2a354e;
+      transform: translateX(-50%) rotate(45deg);
+    }
+
+    .period-option {
+      width: 100%;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      background: transparent;
+      color: #d6def1;
+      text-align: left;
+      font-weight: 700;
+    }
+
+    .period-option:hover:not(:disabled),
+    .period-option.active {
+      background: #202a45;
+      color: #77c4ff;
+    }
+
+    .period-option:disabled {
+      color: #d6def1;
+      opacity: 0.62;
+      cursor: not-allowed;
+    }
+
+    .date-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .history-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      min-height: 28px;
+    }
+
+    .history-chip {
+      min-width: 64px;
+      height: 28px;
+      padding: 0 9px;
+      border-radius: 6px;
+      border: 1px solid #2b3754;
+      background: #121a2d;
+      color: #cdd7ec;
+      font-size: 12px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .check-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 14px;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .check-row input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent-strong);
+    }
+
+    .ma5 {
+      color: #f3a62d;
+    }
+
+    .ma10 {
+      color: #ff667a;
+    }
+
+    .ma20 {
+      color: #32d4c9;
+    }
+
+    .ma30 {
+      color: var(--gold);
+    }
+
+    .meta-list {
+      display: grid;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .meta-row,
+    .stat-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .meta-row b,
+    .stat-row b {
+      color: var(--text);
+      font-weight: 800;
+    }
+
+    .chart-panel {
+      min-width: 0;
+      min-height: 0;
+      max-height: 100%;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    .chart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      min-height: 70px;
+      padding: 16px 20px 13px;
+      background: #11172a;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .ticker-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .ticker-title {
+      font-size: 17px;
+      font-weight: 900;
+      color: #fff;
+    }
+
+    .last-price {
+      font-size: 20px;
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .price-change {
+      padding: 4px 9px;
+      border-radius: 6px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      background: rgba(142, 153, 178, 0.12);
+      color: var(--muted);
+    }
+
+    .price-up {
+      color: var(--up);
+    }
+
+    .price-down {
+      color: var(--down);
+    }
+
+    .price-change.price-up {
+      background: rgba(255, 77, 79, 0.14);
+    }
+
+    .price-change.price-down {
+      background: rgba(24, 199, 183, 0.14);
+    }
+
+    .chart-subtitle {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .chart-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      flex: 0 0 auto;
+    }
+
+    .level-badge {
+      padding: 5px 9px;
+      border-radius: 6px;
+      background: rgba(255, 138, 31, 0.14);
+      color: #ffc078;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .fit-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 6px;
+      border: 1px solid #34415f;
+      background: #151d31;
+      color: #d9e4f7;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .chart-tabs {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      padding: 0 18px;
+      height: 40px;
+      background: #121a2e;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .chart-tab {
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      color: #71bdff;
+      border-bottom: 2px solid var(--accent-strong);
+      font-weight: 800;
+    }
+
+    .chart-body {
+      position: relative;
+      min-height: 0;
+      background: #111321;
       overflow: hidden;
     }
 
     #chart {
       width: 100%;
       height: 100%;
+      min-height: 0;
     }
 
     .info-panel {
@@ -143,158 +638,46 @@
       z-index: 5;
       top: 12px;
       left: 12px;
-      min-width: 390px;
-      max-width: min(680px, calc(100% - 24px));
+      min-width: 420px;
+      max-width: min(760px, calc(100% - 24px));
       padding: 9px 10px;
-      background: rgba(255, 255, 255, 0.94);
-      border: 1px solid var(--line);
+      background: rgba(14, 18, 31, 0.88);
+      border: 1px solid rgba(61, 160, 255, 0.18);
       border-radius: 6px;
-      box-shadow: 0 10px 22px rgba(17, 24, 39, 0.08);
+      color: var(--muted);
       pointer-events: none;
+      backdrop-filter: blur(8px);
     }
 
     .info-title {
-      font-weight: 700;
       margin-bottom: 6px;
+      color: #dce7fb;
+      font-weight: 800;
     }
 
     .info-grid {
       display: grid;
-      grid-template-columns: repeat(5, minmax(66px, auto));
+      grid-template-columns: repeat(5, minmax(68px, auto));
       gap: 5px 12px;
-      color: var(--muted);
       font-variant-numeric: tabular-nums;
     }
 
     .info-grid b {
       color: var(--text);
-      font-weight: 600;
-    }
-
-    .info-grid .price-up b,
-    .signal-buy {
-      color: var(--up);
-    }
-
-    .info-grid .price-down b,
-    .signal-sell {
-      color: var(--down);
-    }
-
-    .info-grid .ma5 b {
-      color: #f59e0b;
-    }
-
-    .info-grid .ma10 b {
-      color: #2563eb;
-    }
-
-    .info-grid .ma20 b {
-      color: #7c3aed;
-    }
-
-    .info-grid .ma30 b {
-      color: #0f766e;
-    }
-
-    .side-panel {
-      min-height: 0;
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      display: grid;
-      grid-template-rows: auto 1fr;
-      overflow: hidden;
-    }
-
-    .side-title {
-      padding: 12px 14px;
-      border-bottom: 1px solid var(--line);
-      font-weight: 700;
-    }
-
-    .signal-list {
-      overflow: auto;
-      padding: 8px;
-    }
-
-    .signal-empty {
-      color: var(--muted);
-      padding: 10px 6px;
-      line-height: 1.6;
-    }
-
-    .signal-item {
-      border-bottom: 1px solid #eef1f6;
-      padding: 9px 6px;
-      cursor: pointer;
-    }
-
-    .signal-item:hover,
-    .signal-item.active {
-      background: #f3f6fb;
-      border-radius: 6px;
-    }
-
-    .signal-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 4px;
-    }
-
-    .signal-date {
-      color: var(--text);
-      font-weight: 700;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .signal-badge {
-      font-weight: 700;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .signal-meta {
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.5;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .message {
-      position: absolute;
-      z-index: 6;
-      inset: 0;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: rgba(247, 248, 251, 0.72);
-      text-align: center;
-      padding: 24px;
-      color: var(--muted);
-      font-size: 15px;
-    }
-
-    .message.error {
-      color: var(--danger);
+      font-weight: 800;
     }
 
     .chart-legend {
-      position: absolute;
-      z-index: 5;
-      top: 12px;
-      right: 16px;
       display: flex;
       flex-wrap: wrap;
-      justify-content: flex-end;
-      gap: 8px 12px;
-      max-width: min(680px, calc(100% - 540px));
-      padding: 8px 10px;
-      background: rgba(255, 255, 255, 0.92);
-      border: 1px solid var(--line);
+      justify-content: flex-start;
+      gap: 8px 11px;
+      width: 100%;
+      padding: 11px 12px;
+      background: rgba(14, 18, 31, 0.84);
+      border: 1px solid rgba(61, 160, 255, 0.16);
       border-radius: 6px;
-      box-shadow: 0 10px 22px rgba(17, 24, 39, 0.06);
+      color: #ccd8ef;
       font-size: 12px;
       pointer-events: none;
     }
@@ -303,7 +686,6 @@
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      color: var(--text);
       white-space: nowrap;
     }
 
@@ -322,7 +704,7 @@
       height: 10px;
       border-radius: 2px;
       background: var(--legend-color);
-      opacity: 0.18;
+      opacity: 0.2;
       border: 1px solid var(--legend-color);
     }
 
@@ -332,7 +714,7 @@
       border: 2px solid var(--up);
       border-radius: 2px;
       position: relative;
-      background: rgba(214, 39, 40, 0.14);
+      background: rgba(255, 77, 79, 0.16);
     }
 
     .legend-candle::before,
@@ -367,35 +749,230 @@
       border-top: 11px solid var(--legend-color);
     }
 
-    @media (max-width: 760px) {
-      .topbar {
-        align-items: stretch;
-        flex-direction: column;
+    .message {
+      position: absolute;
+      z-index: 6;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(11, 13, 20, 0.74);
+      text-align: center;
+      padding: 24px;
+      color: #c5d2ea;
+      font-size: 15px;
+    }
+
+    .message.error {
+      color: var(--danger);
+    }
+
+    .right-rail {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 12px;
+      overflow: hidden;
+    }
+
+    .right-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 0;
+    }
+
+    .right-panel-stack {
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .tab-panel {
+      height: 100%;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .tab-panel.hidden {
+      display: none;
+    }
+
+    .side-title {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line-soft);
+      font-weight: 900;
+    }
+
+    .summary-body,
+    .signal-list {
+      min-height: 0;
+      overflow: auto;
+      padding: 14px 16px;
+    }
+
+    .stat-list {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .stat-row {
+      color: var(--muted);
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(40, 49, 73, 0.7);
+    }
+
+    .latest-box {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border-radius: 6px;
+      background: #121a2d;
+      border: 1px solid #24304a;
+    }
+
+    .latest-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .latest-content {
+      color: var(--text);
+      line-height: 1.6;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .signal-empty {
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .signal-item {
+      padding: 11px 6px;
+      border-bottom: 1px solid rgba(40, 49, 73, 0.74);
+      cursor: pointer;
+    }
+
+    .signal-item:hover,
+    .signal-item.active {
+      background: rgba(61, 160, 255, 0.09);
+      border-radius: 6px;
+    }
+
+    .signal-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 5px;
+    }
+
+    .signal-date {
+      color: var(--text);
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .signal-badge {
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .signal-buy {
+      color: var(--up);
+    }
+
+    .signal-sell {
+      color: var(--down);
+    }
+
+    .signal-meta {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .footerbar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 0 18px;
+      border-top: 1px solid #24304c;
+      background: #0f1424;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 1320px) {
+      .workspace {
+        grid-template-columns: 260px minmax(480px, 1fr) 320px;
+      }
+    }
+
+    @media (max-width: 1080px) {
+      body {
+        overflow: auto;
       }
 
-      .controls {
-        justify-content: flex-start;
+      .app-shell {
+        height: auto;
+        min-height: 100vh;
+        grid-template-rows: 50px auto 32px;
+        overflow: visible;
+      }
+
+      .workspace {
+        grid-template-columns: 260px minmax(0, 1fr);
+        min-height: calc(100vh - 82px);
+        height: auto;
+        overflow: visible;
+      }
+
+      .right-rail {
+        grid-column: 1 / -1;
+        min-height: 360px;
+      }
+    }
+
+    @media (max-width: 760px) {
+      body {
+        overflow: auto;
+      }
+
+      .topbar {
+        padding: 0 12px;
+      }
+
+      .brand-sub,
+      .last-updated {
+        display: none;
       }
 
       .workspace {
         grid-template-columns: 1fr;
-        height: calc(100vh - 190px);
+        padding: 8px;
       }
 
-      .side-panel {
-        min-height: 220px;
+      .chart-panel {
+        min-height: 620px;
       }
 
       .info-panel {
         min-width: 0;
+        max-width: calc(100% - 24px);
       }
 
       .info-grid {
         grid-template-columns: repeat(2, minmax(98px, auto));
       }
 
-      .chart-legend {
-        display: none;
+      .chart-header {
+        align-items: flex-start;
+        flex-direction: column;
       }
     }
   </style>
@@ -403,78 +980,218 @@
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <div class="brand">chan.py 单股缠论图</div>
-      <form id="chart-form" class="controls">
-        <label>
-          代码
-          <input id="code" class="code-input" name="code" value="{{ default_code }}" autocomplete="off" spellcheck="false" inputmode="numeric" pattern="[0-9]{6}">
-        </label>
-        <label>
-          级别
-          <select id="level" name="level">
-            <option value="day" selected>日线</option>
-            <option value="week">周线</option>
-            <option value="month">月线</option>
-          </select>
-        </label>
-        <label>
-          开始
-          <input id="start" name="start" type="date" value="{{ default_start }}">
-        </label>
-        <label>
-          结束
-          <input id="end" name="end" type="date" value="{{ default_end }}">
-        </label>
-        <button id="submit-btn" type="submit">生成图表</button>
-      </form>
+      <div class="brand">
+        <div class="brand-main"><span class="brand-mark"></span>缠论助手</div>
+        <div class="brand-sub">chan.py Baostock 单股分析</div>
+      </div>
+      <div class="top-status">
+        <span class="status-pill"><i id="status-dot" class="status-dot"></i><span id="status-text">数据就绪</span></span>
+        <span id="last-updated" class="last-updated">最后更新：-</span>
+      </div>
     </header>
 
-    <main>
-      <div class="workspace">
-        <section class="chart-wrap">
-          <div id="info" class="info-panel"></div>
-          <div class="chart-legend">
-            <span class="legend-item"><i class="legend-candle"></i>K线</span>
-            <span class="legend-item"><i class="legend-line thin" style="--legend-color:#f59e0b"></i>MA5</span>
-            <span class="legend-item"><i class="legend-line thin" style="--legend-color:#2563eb"></i>MA10</span>
-            <span class="legend-item"><i class="legend-line thin" style="--legend-color:#7c3aed"></i>MA20</span>
-            <span class="legend-item"><i class="legend-line thin" style="--legend-color:#0f766e"></i>MA30</span>
-            <span class="legend-item"><i class="legend-line" style="--legend-color:#111827"></i>笔</span>
-            <span class="legend-item"><i class="legend-line" style="--legend-color:#e11d48"></i>线段</span>
-            <span class="legend-item"><i class="legend-box" style="--legend-color:#2563eb"></i>中枢</span>
-            <span class="legend-item"><i class="legend-box" style="--legend-color:#7c3aed"></i>线段中枢</span>
-            <span class="legend-item"><i class="legend-triangle" style="--legend-color:#d62728"></i>买点</span>
-            <span class="legend-item"><i class="legend-triangle down" style="--legend-color:#188038"></i>卖点</span>
+    <main class="workspace">
+      <aside class="left-rail">
+        <section class="panel">
+          <h2 class="panel-title">股票查询 <span id="code-market" class="panel-kicker">自动识别市场</span></h2>
+          <form id="chart-form" class="search-form">
+            <div>
+              <div class="search-row">
+                <input id="code" class="code-input" name="code" value="{{ default_code }}" autocomplete="off" spellcheck="false" inputmode="numeric" maxlength="9" aria-label="股票代码">
+                <button id="submit-btn" class="primary-btn" type="submit">刷新</button>
+              </div>
+              <div id="code-hint" class="code-hint"></div>
+            </div>
+
+            <input id="level" name="level" type="hidden" value="day">
+            <div>
+              <span class="field-label">分析周期</span>
+              <div id="period-select" class="period-select">
+                <button id="period-trigger" class="period-trigger active" type="button" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="period-label">日线</span>
+                  <span class="period-caret" aria-hidden="true"></span>
+                </button>
+                <div id="period-menu" class="period-menu" role="listbox" aria-label="分析周期">
+                  <button class="period-option" type="button" data-level="5m" role="option" aria-selected="false">5分钟</button>
+                  <button class="period-option" type="button" data-level="30m" role="option" aria-selected="false">30分钟</button>
+                  <button class="period-option" type="button" data-level="60m" role="option" aria-selected="false">60分钟</button>
+                  <button class="period-option active" type="button" data-level="day" role="option" aria-selected="true">日线</button>
+                  <button class="period-option" type="button" data-level="week" role="option" aria-selected="false">周线</button>
+                  <button class="period-option" type="button" data-level="month" role="option" aria-selected="false">月线</button>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <span class="field-label">日期范围</span>
+              <div class="date-grid">
+                <input id="start" class="date-input" name="start" type="date" value="{{ default_start }}" aria-label="开始日期">
+                <input id="end" class="date-input" name="end" type="date" value="{{ default_end }}" aria-label="结束日期">
+              </div>
+            </div>
+          </form>
+          <div class="field-label" style="margin-top: 14px;">最近查看</div>
+          <div id="history-row" class="history-row"></div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-title">缠论显示</h2>
+          <div class="check-grid">
+            <label class="check-row"><input type="checkbox" data-series-names="笔" checked>笔</label>
+            <label class="check-row"><input type="checkbox" data-series-names="线段" checked>线段</label>
+            <label class="check-row"><input type="checkbox" data-series-names="中枢" checked>中枢</label>
+            <label class="check-row"><input type="checkbox" data-series-names="线段中枢" checked>段中枢</label>
+            <label class="check-row"><input type="checkbox" data-series-names="买点,卖点,线段买点,线段卖点" checked>买卖点</label>
           </div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-title">均线设置</h2>
+          <div class="check-grid">
+            <label class="check-row ma5"><input type="checkbox" data-series-names="MA5" checked>MA5</label>
+            <label class="check-row ma10"><input type="checkbox" data-series-names="MA10" checked>MA10</label>
+            <label class="check-row ma20"><input type="checkbox" data-series-names="MA20" checked>MA20</label>
+            <label class="check-row ma30"><input type="checkbox" data-series-names="MA30" checked>MA30</label>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-title">数据状态</h2>
+          <div class="meta-list">
+            <div class="meta-row"><span>数据源</span><b>Baostock</b></div>
+            <div class="meta-row"><span>复权</span><b>前复权</b></div>
+            <div class="meta-row"><span>范围</span><b id="range-summary">-</b></div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="chart-panel">
+        <div class="chart-header">
+          <div>
+            <div class="ticker-line">
+              <span id="chart-title" class="ticker-title">-</span>
+              <span id="last-price" class="last-price">-</span>
+              <span id="price-change" class="price-change">-</span>
+            </div>
+            <div id="chart-subtitle" class="chart-subtitle">-</div>
+          </div>
+          <div class="chart-actions">
+            <span id="current-level" class="level-badge">日线</span>
+            <button id="fit-btn" class="fit-btn" type="button" title="查看全部" aria-label="查看全部">↔</button>
+          </div>
+        </div>
+        <div class="chart-tabs">
+          <span class="chart-tab">K线图</span>
+        </div>
+        <div class="chart-body">
+          <div id="info" class="info-panel"></div>
           <div id="chart"></div>
           <div id="message" class="message"></div>
-        </section>
-        <aside class="side-panel">
-          <div class="side-title">买卖点</div>
-          <div id="signal-list" class="signal-list"></div>
-        </aside>
-      </div>
+        </div>
+      </section>
+
+      <aside class="right-rail">
+        <div class="chart-legend">
+          <span class="legend-item"><i class="legend-candle"></i>K线</span>
+          <span class="legend-item"><i class="legend-line thin" style="--legend-color:#f3a62d"></i>MA5</span>
+          <span class="legend-item"><i class="legend-line thin" style="--legend-color:#ff667a"></i>MA10</span>
+          <span class="legend-item"><i class="legend-line thin" style="--legend-color:#32d4c9"></i>MA20</span>
+          <span class="legend-item"><i class="legend-line thin" style="--legend-color:#f3c842"></i>MA30</span>
+          <span class="legend-item"><i class="legend-line" style="--legend-color:#dce7fb"></i>笔</span>
+          <span class="legend-item"><i class="legend-line" style="--legend-color:#ff6f9c"></i>线段</span>
+          <span class="legend-item"><i class="legend-box" style="--legend-color:#3da0ff"></i>中枢</span>
+          <span class="legend-item"><i class="legend-box" style="--legend-color:#a772ff"></i>段中枢</span>
+          <span class="legend-item"><i class="legend-triangle" style="--legend-color:#ff4d4f"></i>买点</span>
+          <span class="legend-item"><i class="legend-triangle down" style="--legend-color:#18c7b7"></i>卖点</span>
+        </div>
+        <div class="right-tabs">
+          <button class="right-tab active" type="button" data-tab="summary">基础分析</button>
+          <button class="right-tab" type="button" data-tab="signals">买卖点</button>
+        </div>
+        <div class="right-panel-stack">
+          <section id="summary-panel" class="panel tab-panel">
+            <div class="side-title">详细信息</div>
+            <div class="summary-body">
+              <div id="stat-list" class="stat-list"></div>
+              <div class="latest-box">
+                <div class="latest-title">最近信号</div>
+                <div id="latest-signal" class="latest-content">-</div>
+              </div>
+            </div>
+          </section>
+          <section id="signals-panel" class="panel tab-panel hidden">
+            <div class="side-title">买卖点列表</div>
+            <div id="signal-list" class="signal-list"></div>
+          </section>
+        </div>
+      </aside>
     </main>
+
+    <footer class="footerbar">
+      <span id="footer-text">就绪</span>
+    </footer>
   </div>
 
   <script>
     const form = document.getElementById("chart-form");
+    const codeInput = document.getElementById("code");
+    const codeHint = document.getElementById("code-hint");
+    const codeMarket = document.getElementById("code-market");
+    const levelInput = document.getElementById("level");
+    const periodSelect = document.getElementById("period-select");
+    const periodTrigger = document.getElementById("period-trigger");
+    const periodLabel = document.getElementById("period-label");
+    const periodOptions = document.querySelectorAll(".period-option[data-level]");
     const chartEl = document.getElementById("chart");
     const message = document.getElementById("message");
     const info = document.getElementById("info");
     const signalList = document.getElementById("signal-list");
     const submitBtn = document.getElementById("submit-btn");
+    const chartTitle = document.getElementById("chart-title");
+    const chartSubtitle = document.getElementById("chart-subtitle");
+    const lastPriceEl = document.getElementById("last-price");
+    const priceChangeEl = document.getElementById("price-change");
+    const currentLevelEl = document.getElementById("current-level");
+    const statList = document.getElementById("stat-list");
+    const latestSignal = document.getElementById("latest-signal");
+    const rangeSummary = document.getElementById("range-summary");
+    const historyRow = document.getElementById("history-row");
+    const statusDot = document.getElementById("status-dot");
+    const statusText = document.getElementById("status-text");
+    const lastUpdated = document.getElementById("last-updated");
+    const footerText = document.getElementById("footer-text");
+    const fitBtn = document.getElementById("fit-btn");
+    const seriesToggles = document.querySelectorAll("[data-series-names]");
+    const rightTabs = document.querySelectorAll(".right-tab");
+    const rightPanels = {
+      summary: document.getElementById("summary-panel"),
+      signals: document.getElementById("signals-panel")
+    };
+
+    const LEVEL_LABELS = {"5m": "5分钟", "30m": "30分钟", "60m": "60分钟", day: "日线", week: "周线", month: "月线"};
+    const RECENT_CODES_KEY = "chan-webui-recent-codes";
 
     let chart = null;
+    let activePayload = null;
     let activeCandles = [];
     let activeMa = {};
     let activeSignals = [];
+    let isLoading = false;
 
     function fmt(value, digits = 2) {
       if (value === null || value === undefined || Number.isNaN(Number(value))) {
         return "-";
       }
       return Number(value).toFixed(digits);
+    }
+
+    function fmtSigned(value, digits = 2) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) {
+        return "-";
+      }
+      const num = Number(value);
+      const prefix = num > 0 ? "+" : "";
+      return `${prefix}${num.toFixed(digits)}`;
     }
 
     function fmtVolume(value) {
@@ -491,25 +1208,62 @@
       return num.toFixed(0);
     }
 
+    function displayCode(fullCode) {
+      return String(fullCode || "").replace(/^(sh|sz)\./i, "");
+    }
+
+    function parseCode(value) {
+      const raw = String(value || "").trim().toLowerCase();
+      const withoutPrefix = raw.replace(/^(sh|sz)\./, "");
+      const digits = withoutPrefix.replace(/\D/g, "").slice(0, 6);
+      if (!digits) {
+        return {digits, valid: false, message: "请输入 6 位股票代码", tone: ""};
+      }
+      if (digits.length < 6) {
+        return {digits, valid: false, message: `已输入 ${digits.length}/6 位`, tone: ""};
+      }
+      if (/^[023]/.test(digits)) {
+        return {digits, full: `sz.${digits}`, market: "深市", valid: true, message: `将按深市 sz.${digits} 查询`, tone: "ok"};
+      }
+      if (/^[569]/.test(digits)) {
+        return {digits, full: `sh.${digits}`, market: "沪市", valid: true, message: `将按沪市 sh.${digits} 查询`, tone: "ok"};
+      }
+      if (/^[48]/.test(digits)) {
+        return {digits, valid: false, message: "北交所代码暂不支持 Baostock 绘图", tone: "error"};
+      }
+      return {digits, valid: false, message: "无法识别交易所", tone: "error"};
+    }
+
+    function updateCodeState() {
+      const parsed = parseCode(codeInput.value);
+      codeInput.value = parsed.digits;
+      codeHint.textContent = parsed.message;
+      codeHint.className = `code-hint ${parsed.tone || ""}`.trim();
+      codeMarket.textContent = parsed.market ? parsed.market : "自动识别市场";
+      submitBtn.disabled = isLoading || !parsed.valid;
+      return parsed;
+    }
+
     function showMessage(text, isError = false) {
       message.textContent = text;
       message.classList.toggle("error", isError);
       message.style.display = text ? "flex" : "none";
     }
 
-    function setLoading(isLoading) {
-      submitBtn.disabled = isLoading;
-      submitBtn.textContent = isLoading ? "生成中" : "生成图表";
-      if (isLoading) {
-        showMessage("正在下载行情并计算缠论结构...");
-      }
+    function setStatus(kind, text) {
+      statusDot.className = `status-dot ${kind === "ready" ? "" : kind}`.trim();
+      statusText.textContent = text;
+      footerText.textContent = text;
     }
 
-    function normalizeCodeInput() {
-      let value = document.getElementById("code").value.trim().toLowerCase();
-      value = value.replace(/^(sh|sz)\./, "");
-      value = value.replace(/\D/g, "").slice(0, 6);
-      document.getElementById("code").value = value;
+    function setLoading(nextLoading) {
+      isLoading = nextLoading;
+      submitBtn.textContent = nextLoading ? "刷新中" : "刷新";
+      updateCodeState();
+      if (nextLoading) {
+        setStatus("loading", "正在计算");
+        showMessage("正在下载行情并计算缠论结构...");
+      }
     }
 
     function ensureChart() {
@@ -517,6 +1271,24 @@
         chart = echarts.init(chartEl, null, {renderer: "canvas"});
       }
       return chart;
+    }
+
+    function getSelectedSeries() {
+      const selected = {};
+      seriesToggles.forEach(toggle => {
+        const names = toggle.dataset.seriesNames.split(",").map(name => name.trim()).filter(Boolean);
+        names.forEach(name => {
+          selected[name] = toggle.checked;
+        });
+      });
+      return selected;
+    }
+
+    function applySeriesSelection() {
+      if (!chart) {
+        return;
+      }
+      chart.setOption({legend: {show: false, selected: getSelectedSeries()}});
     }
 
     function updateInfo(idx) {
@@ -561,6 +1333,15 @@
       }).sort((a, b) => b.x - a.x);
     }
 
+    function focusSignal(idx) {
+      updateInfo(idx);
+      ensureChart().dispatchAction({
+        type: "dataZoom",
+        startValue: Math.max(0, idx - 40),
+        endValue: Math.min(activeCandles.length - 1, idx + 40)
+      });
+    }
+
     function renderSignalList() {
       if (!activeSignals.length) {
         signalList.innerHTML = `<div class="signal-empty">当前范围内暂无买卖点。</div>`;
@@ -577,41 +1358,98 @@
         </div>
       `).join("");
       signalList.querySelectorAll(".signal-item").forEach(item => {
-        item.addEventListener("click", () => {
-          const idx = Number(item.dataset.idx);
-          updateInfo(idx);
-          ensureChart().dispatchAction({
-            type: "dataZoom",
-            startValue: Math.max(0, idx - 40),
-            endValue: Math.min(activeCandles.length - 1, idx + 40)
-          });
-        });
+        item.addEventListener("click", () => focusSignal(Number(item.dataset.idx)));
       });
+    }
+
+    function renderSummary(payload) {
+      const candles = payload.candles || [];
+      const elements = payload.elements || {};
+      const latest = candles[candles.length - 1];
+      const previous = candles[candles.length - 2];
+      const change = latest && previous ? latest.close - previous.close : null;
+      const percent = latest && previous && previous.close ? (change / previous.close) * 100 : null;
+      const priceClass = change === null ? "" : change >= 0 ? "price-up" : "price-down";
+
+      chartTitle.textContent = `${displayCode(payload.code)} ${payload.level_label}`;
+      chartSubtitle.textContent = `${payload.start} 至 ${payload.end} · ${candles.length} 根K线`;
+      lastPriceEl.textContent = latest ? fmt(latest.close) : "-";
+      lastPriceEl.className = `last-price ${priceClass}`.trim();
+      priceChangeEl.textContent = change === null ? "-" : `${fmtSigned(change)} (${fmtSigned(percent)}%)`;
+      priceChangeEl.className = `price-change ${priceClass}`.trim();
+      currentLevelEl.textContent = payload.level_label;
+      rangeSummary.textContent = `${payload.start} / ${payload.end}`;
+
+      const buyCount = activeSignals.filter(item => item.is_buy).length;
+      const sellCount = activeSignals.length - buyCount;
+      statList.innerHTML = `
+        <div class="stat-row"><span>K线数量</span><b>${candles.length}</b></div>
+        <div class="stat-row"><span>笔数量</span><b>${(elements.bi || []).length}</b></div>
+        <div class="stat-row"><span>线段数量</span><b>${(elements.seg || []).length}</b></div>
+        <div class="stat-row"><span>中枢数量</span><b>${(elements.zs || []).length}</b></div>
+        <div class="stat-row"><span>段中枢数量</span><b>${(elements.seg_zs || []).length}</b></div>
+        <div class="stat-row"><span>买点 / 卖点</span><b>${buyCount} / ${sellCount}</b></div>
+      `;
+
+      const firstSignal = activeSignals[0];
+      if (!firstSignal) {
+        latestSignal.textContent = "当前范围内暂无信号";
+      } else {
+        latestSignal.innerHTML = `
+          <span class="${firstSignal.is_buy ? "signal-buy" : "signal-sell"}">${firstSignal.label}</span>
+          · ${firstSignal.time}<br>
+          ${firstSignal.kind} · 价格 ${fmt(firstSignal.y)} · 收盘 ${fmt(firstSignal.close)}
+        `;
+      }
     }
 
     function applyRuntimeFormatters(option, payload) {
       const tickLabels = new Map((payload.date_ticks || []).map(item => [String(item.value), item.label]));
-      const xAxis = Array.isArray(option.xAxis) ? option.xAxis[0] : option.xAxis;
-      xAxis.axisLabel = {
-        ...(xAxis.axisLabel || {}),
-        interval: (_index, value) => tickLabels.has(String(value)),
-        formatter: value => tickLabels.get(String(value)) || ""
-      };
-      xAxis.axisPointer = {
-        show: true,
-        type: "line",
-        snap: true,
-        lineStyle: {color: "#697386", width: 1, type: "dashed"},
-        label: {show: false}
+      option.backgroundColor = "#111321";
+      option.animation = false;
+      option.title = {show: false};
+      option.legend = {show: false, selected: getSelectedSeries()};
+      option.grid = {
+        left: 54,
+        right: 18,
+        top: 20,
+        bottom: 30,
+        containLabel: true
       };
 
-      const yAxis = Array.isArray(option.yAxis) ? option.yAxis[0] : option.yAxis;
-      yAxis.axisPointer = {
-        show: true,
-        type: "line",
-        lineStyle: {color: "#697386", width: 1, type: "dashed"},
-        label: {show: true, precision: 2}
-      };
+      const xAxes = Array.isArray(option.xAxis) ? option.xAxis : [option.xAxis];
+      xAxes.forEach(xAxis => {
+        xAxis.axisLabel = {
+          ...(xAxis.axisLabel || {}),
+          color: "#737f99",
+          fontSize: 11,
+          interval: (_index, value) => tickLabels.has(String(value)),
+          formatter: value => tickLabels.get(String(value)) || ""
+        };
+        xAxis.axisLine = {lineStyle: {color: "#4b5672"}};
+        xAxis.axisTick = {show: false};
+        xAxis.splitLine = {show: false};
+        xAxis.axisPointer = {
+          show: true,
+          type: "line",
+          snap: true,
+          lineStyle: {color: "#65708a", width: 1, type: "dashed"},
+          label: {show: false}
+        };
+      });
+
+      const yAxes = Array.isArray(option.yAxis) ? option.yAxis : [option.yAxis];
+      yAxes.forEach(yAxis => {
+        yAxis.axisLabel = {...(yAxis.axisLabel || {}), color: "#737f99"};
+        yAxis.axisLine = {lineStyle: {color: "#4b5672"}};
+        yAxis.splitLine = {show: false};
+        yAxis.axisPointer = {
+          show: true,
+          type: "line",
+          lineStyle: {color: "#65708a", width: 1, type: "dashed"},
+          label: {show: true, precision: 2, backgroundColor: "#2a344d", color: "#dce7fb"}
+        };
+      });
 
       option.tooltip = {
         ...(option.tooltip || {}),
@@ -620,11 +1458,60 @@
         axisPointer: {
           type: "cross",
           snap: true,
-          lineStyle: {color: "#697386", width: 1, type: "dashed"},
-          crossStyle: {color: "#697386", width: 1, type: "dashed"},
+          lineStyle: {color: "#65708a", width: 1, type: "dashed"},
+          crossStyle: {color: "#65708a", width: 1, type: "dashed"},
           label: {show: false}
         }
       };
+
+      (option.dataZoom || []).forEach(zoom => {
+        zoom.show = false;
+        zoom.bottom = 0;
+        zoom.height = 0;
+      });
+
+      (option.series || []).forEach(series => {
+        if (series.type === "candlestick") {
+          series.itemStyle = {
+            ...(series.itemStyle || {}),
+            color: "#ff4d4f",
+            color0: "#18c7b7",
+            borderColor: "#ff4d4f",
+            borderColor0: "#18c7b7"
+          };
+        }
+        if (series.name === "MA5") {
+          series.lineStyle = {...(series.lineStyle || {}), color: "#f3a62d"};
+          series.itemStyle = {...(series.itemStyle || {}), color: "#f3a62d"};
+        }
+        if (series.name === "MA10") {
+          series.lineStyle = {...(series.lineStyle || {}), color: "#ff667a"};
+          series.itemStyle = {...(series.itemStyle || {}), color: "#ff667a"};
+        }
+        if (series.name === "MA20") {
+          series.lineStyle = {...(series.lineStyle || {}), color: "#32d4c9"};
+          series.itemStyle = {...(series.itemStyle || {}), color: "#32d4c9"};
+        }
+        if (series.name === "MA30") {
+          series.lineStyle = {...(series.lineStyle || {}), color: "#f3c842"};
+          series.itemStyle = {...(series.itemStyle || {}), color: "#f3c842"};
+        }
+        if (series.name === "笔") {
+          series.lineStyle = {...(series.lineStyle || {}), color: "#dce7fb", width: 1.6};
+        }
+        if (series.name === "线段") {
+          series.lineStyle = {...(series.lineStyle || {}), color: "#ff6f9c", width: 2.7};
+        }
+        if (series.markArea && series.name === "中枢") {
+          series.markArea.itemStyle = {color: "rgba(61, 160, 255, 0.16)"};
+        }
+        if (series.markArea && series.name === "线段中枢") {
+          series.markArea.itemStyle = {color: "rgba(167, 114, 255, 0.14)"};
+        }
+        if (series.label) {
+          series.label.color = "#dce7fb";
+        }
+      });
 
       return option;
     }
@@ -645,10 +1532,12 @@
     }
 
     function renderChart(payload) {
+      activePayload = payload;
       activeCandles = payload.candles || [];
       activeMa = payload.ma || {};
       activeSignals = collectSignals(payload.elements || {});
       renderSignalList();
+      renderSummary(payload);
 
       const option = applyRuntimeFormatters(payload.chart_options, payload);
       const instance = ensureChart();
@@ -656,9 +1545,45 @@
       instance.setOption(option, true);
       bindChartEvents();
       updateInfo(activeCandles.length - 1);
+      requestAnimationFrame(() => instance.resize());
+    }
+
+    function getRecentCodes() {
+      try {
+        return JSON.parse(localStorage.getItem(RECENT_CODES_KEY) || "[]");
+      } catch (_error) {
+        return [];
+      }
+    }
+
+    function saveRecentCode(code) {
+      const digits = displayCode(code);
+      const next = [digits, ...getRecentCodes().filter(item => item !== digits)].slice(0, 6);
+      localStorage.setItem(RECENT_CODES_KEY, JSON.stringify(next));
+      renderRecentCodes();
+    }
+
+    function renderRecentCodes() {
+      const codes = getRecentCodes();
+      if (!codes.length) {
+        historyRow.innerHTML = `<span class="code-hint">-</span>`;
+        return;
+      }
+      historyRow.innerHTML = codes.map(code => `<button class="history-chip" type="button" data-code="${code}">${code}</button>`).join("");
+      historyRow.querySelectorAll(".history-chip").forEach(button => {
+        button.addEventListener("click", () => {
+          codeInput.value = button.dataset.code;
+          updateCodeState();
+          loadChart();
+        });
+      });
     }
 
     async function loadChart() {
+      const parsed = updateCodeState();
+      if (!parsed.valid || isLoading) {
+        return;
+      }
       const params = new URLSearchParams(new FormData(form));
       setLoading(true);
       try {
@@ -669,20 +1594,102 @@
         }
         showMessage("");
         renderChart(payload);
+        saveRecentCode(payload.code);
+        setStatus("ready", "数据就绪");
+        const now = new Date().toLocaleString("zh-CN", {hour12: false});
+        lastUpdated.textContent = `最后更新：${now}`;
       } catch (error) {
         showMessage(error.message, true);
+        setStatus("error", "加载失败");
       } finally {
         setLoading(false);
       }
     }
 
+    function setLevel(level, shouldLoad = false) {
+      levelInput.value = level;
+      periodOptions.forEach(button => {
+        const isActive = button.dataset.level === level;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-selected", String(isActive));
+      });
+      const label = LEVEL_LABELS[level] || level;
+      periodLabel.textContent = label;
+      periodTrigger.classList.toggle("active", Boolean(label));
+      currentLevelEl.textContent = label;
+      if (shouldLoad) {
+        loadChart();
+      }
+    }
+
+    function closePeriodMenu() {
+      periodSelect.classList.remove("open");
+      periodTrigger.setAttribute("aria-expanded", "false");
+    }
+
+    function togglePeriodMenu() {
+      const willOpen = !periodSelect.classList.contains("open");
+      periodSelect.classList.toggle("open", willOpen);
+      periodTrigger.setAttribute("aria-expanded", String(willOpen));
+    }
+
     form.addEventListener("submit", event => {
       event.preventDefault();
-      normalizeCodeInput();
       loadChart();
     });
 
-    document.getElementById("code").addEventListener("blur", normalizeCodeInput);
+    codeInput.addEventListener("input", updateCodeState);
+    codeInput.addEventListener("blur", updateCodeState);
+
+    periodTrigger.addEventListener("click", event => {
+      event.stopPropagation();
+      togglePeriodMenu();
+    });
+
+    periodOptions.forEach(button => {
+      button.addEventListener("click", event => {
+        event.stopPropagation();
+        setLevel(button.dataset.level, true);
+        closePeriodMenu();
+      });
+    });
+
+    document.addEventListener("click", event => {
+      if (!periodSelect.contains(event.target)) {
+        closePeriodMenu();
+      }
+    });
+
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        closePeriodMenu();
+      }
+    });
+
+    seriesToggles.forEach(toggle => {
+      toggle.addEventListener("change", applySeriesSelection);
+    });
+
+    rightTabs.forEach(tab => {
+      tab.addEventListener("click", () => {
+        rightTabs.forEach(item => item.classList.toggle("active", item === tab));
+        Object.entries(rightPanels).forEach(([key, panel]) => {
+          panel.classList.toggle("hidden", key !== tab.dataset.tab);
+        });
+      });
+    });
+
+    fitBtn.addEventListener("click", () => {
+      if (!activeCandles.length) {
+        return;
+      }
+      ensureChart().dispatchAction({
+        type: "dataZoom",
+        startValue: 0,
+        endValue: activeCandles.length - 1
+      });
+      updateInfo(activeCandles.length - 1);
+    });
 
     window.addEventListener("resize", () => {
       if (chart) {
@@ -690,6 +1697,9 @@
       }
     });
 
+    updateCodeState();
+    renderRecentCodes();
+    setLevel("day");
     loadChart();
   </script>
 </body>

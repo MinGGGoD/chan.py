@@ -25,12 +25,18 @@ from Plot.PlotMeta import CChanPlotMeta
 app = Flask(__name__)
 
 LEVEL_MAP = {
+    "5m": KL_TYPE.K_5M,
+    "30m": KL_TYPE.K_30M,
+    "60m": KL_TYPE.K_60M,
     "day": KL_TYPE.K_DAY,
     "week": KL_TYPE.K_WEEK,
     "month": KL_TYPE.K_MON,
 }
 
 LEVEL_LABEL = {
+    "5m": "5分钟",
+    "30m": "30分钟",
+    "60m": "60分钟",
     "day": "日线",
     "week": "周线",
     "month": "月线",
@@ -44,7 +50,7 @@ ECHARTS_JS_URL = "/static/vendor/echarts.min.js"
 
 
 def default_start() -> str:
-    return (date.today() - timedelta(days=365 * 3)).isoformat()
+    return (date.today() - timedelta(days=365 * 2)).isoformat()
 
 
 def default_end() -> str:
@@ -82,7 +88,7 @@ def normalize_request_args(args) -> tuple[str, str, str, str]:
 
     level = args.get("level", "day").strip().lower()
     if level not in LEVEL_MAP:
-        raise ValueError("级别只支持 day、week、month")
+        raise ValueError("级别只支持 5m、30m、60m、day、week、month")
 
     start = normalize_date(args.get("start"), default_start(), "start")
     end = normalize_date(args.get("end"), default_end(), "end")
@@ -115,19 +121,28 @@ def moving_average(values: list[float], window: int) -> list[float | None]:
     return res
 
 
+def split_time_parts(time_value: Any) -> tuple[str, str, str, str, str]:
+    text = str(time_value)
+    date_part, _, minute_part = text.partition(" ")
+    date_parts = date_part.split("/")
+    if len(date_parts) < 3:
+        return text, "", "", "", minute_part
+    return date_parts[0], date_parts[1], date_parts[2], date_part, minute_part
+
+
 def build_date_ticks(candles: list[dict[str, Any]], level: str) -> list[dict[str, Any]]:
     if not candles:
         return []
 
-    target_count = 14 if level == "day" else 16
+    is_minute_level = level in {"5m", "30m", "60m"}
+    target_count = 18 if is_minute_level else 14 if level == "day" else 16
     tick_indexes: list[int] = []
     seen_periods = set()
     for idx, candle in enumerate(candles):
-        parts = str(candle["time"]).split("/")
-        if len(parts) < 3:
+        year, month, day, date_part, minute_part = split_time_parts(candle["time"])
+        if not day:
             continue
-        year, month, day = parts[:3]
-        period_key = year if level == "month" else f"{year}-{month}"
+        period_key = date_part if is_minute_level else year if level == "month" else f"{year}-{month}"
         if period_key not in seen_periods:
             seen_periods.add(period_key)
             tick_indexes.append(idx)
@@ -145,14 +160,17 @@ def build_date_ticks(candles: list[dict[str, Any]], level: str) -> list[dict[str
 
     ticks = []
     last_year = ""
+    last_date = ""
     for idx in tick_indexes:
         candle = candles[idx]
-        parts = str(candle["time"]).split("/")
-        if len(parts) < 3:
+        year, month, day, date_part, minute_part = split_time_parts(candle["time"])
+        if not day:
             label = str(candle["time"])
         else:
-            year, month, day = parts[:3]
-            if level == "month":
+            if is_minute_level:
+                label = f"{month}/{day}" if date_part != last_date else minute_part
+                last_date = date_part
+            elif level == "month":
                 label = f"{year}/{month}" if year != last_year else month
             elif year != last_year:
                 label = f"{year}/{month}"

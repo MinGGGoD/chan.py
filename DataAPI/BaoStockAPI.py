@@ -54,6 +54,16 @@ def GetColumnNameFromFieldList(fileds: str):
     return [_dict[x] for x in fileds.split(",")]
 
 
+def is_valid_price_row(item_dict):
+    price_fields = [
+        DATA_FIELD.FIELD_OPEN,
+        DATA_FIELD.FIELD_HIGH,
+        DATA_FIELD.FIELD_LOW,
+        DATA_FIELD.FIELD_CLOSE,
+    ]
+    return all(item_dict[field] > 0 for field in price_fields)
+
+
 class CBaoStock(CCommonStockApi):
     is_connect = None
 
@@ -65,7 +75,7 @@ class CBaoStock(CCommonStockApi):
         if kltype_lt_day(self.k_type):
             if not self.is_stock:
                 raise Exception("没有获取到数据，注意指数是没有分钟级别数据的！")
-            fields = "time,open,high,low,close"
+            fields = "time,open,high,low,close,volume,amount"
         else:
             fields = "date,open,high,low,close,volume,amount,turn"
         autype_dict = {AUTYPE.QFQ: "2", AUTYPE.HFQ: "1", AUTYPE.NONE: "3"}
@@ -80,7 +90,10 @@ class CBaoStock(CCommonStockApi):
         if rs.error_code != '0':
             raise Exception(rs.error_msg)
         while rs.error_code == '0' and rs.next():
-            yield CKLine_Unit(create_item_dict(rs.get_row_data(), GetColumnNameFromFieldList(fields)))
+            item_dict = create_item_dict(rs.get_row_data(), GetColumnNameFromFieldList(fields))
+            if not is_valid_price_row(item_dict):
+                continue
+            yield CKLine_Unit(item_dict)
 
     def SetBasciInfo(self):
         rs = bs.query_stock_basic(code=self.code)
