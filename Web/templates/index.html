@@ -229,6 +229,10 @@
       min-width: 0;
     }
 
+    .search-box {
+      position: relative;
+    }
+
     .code-input,
     .date-input {
       width: 100%;
@@ -295,6 +299,59 @@
 
     .code-hint.error {
       color: var(--danger);
+    }
+
+    .stock-suggestions {
+      position: absolute;
+      z-index: 20;
+      top: 42px;
+      left: 0;
+      right: 92px;
+      max-height: 280px;
+      overflow-y: auto;
+      border: 1px solid #33405d;
+      border-radius: 6px;
+      background: #0d1322;
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.36);
+    }
+
+    .stock-suggestions.hidden {
+      display: none;
+    }
+
+    .stock-suggestion {
+      width: 100%;
+      min-height: 42px;
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border-bottom: 1px solid var(--line-soft);
+      color: var(--text);
+      text-align: left;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .stock-suggestion:last-child {
+      border-bottom: 0;
+    }
+
+    .stock-suggestion:hover,
+    .stock-suggestion.active {
+      background: rgba(61, 160, 255, 0.12);
+    }
+
+    .stock-suggestion-name {
+      font-weight: 900;
+    }
+
+    .stock-suggestion-code {
+      color: var(--muted);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
     }
 
     .field-label {
@@ -995,11 +1052,12 @@
         <section class="panel">
           <h2 class="panel-title">股票查询 <span id="code-market" class="panel-kicker">自动识别市场</span></h2>
           <form id="chart-form" class="search-form">
-            <div>
+            <div class="search-box">
               <div class="search-row">
-                <input id="code" class="code-input" name="code" value="{{ default_code }}" autocomplete="off" spellcheck="false" inputmode="numeric" maxlength="9" aria-label="股票代码">
+                <input id="code" class="code-input" name="code" value="{{ default_code }}" autocomplete="off" spellcheck="false" maxlength="32" aria-label="股票代码或股票名称">
                 <button id="submit-btn" class="primary-btn" type="submit">刷新</button>
               </div>
+              <div id="stock-suggestions" class="stock-suggestions hidden" role="listbox" aria-label="股票联想"></div>
               <div id="code-hint" class="code-hint"></div>
             </div>
 
@@ -1137,6 +1195,7 @@
     const codeInput = document.getElementById("code");
     const codeHint = document.getElementById("code-hint");
     const codeMarket = document.getElementById("code-market");
+    const stockSuggestions = document.getElementById("stock-suggestions");
     const levelInput = document.getElementById("level");
     const periodSelect = document.getElementById("period-select");
     const periodTrigger = document.getElementById("period-trigger");
@@ -1169,7 +1228,7 @@
     };
 
     const LEVEL_LABELS = {"5m": "5分钟", "30m": "30分钟", "60m": "60分钟", day: "日线", week: "周线", month: "月线"};
-    const RECENT_CODES_KEY = "chan-webui-recent-codes";
+    const RECENT_STOCKS_KEY = "chan-webui-recent-stocks";
 
     let chart = null;
     let activePayload = null;
@@ -1177,6 +1236,10 @@
     let activeMa = {};
     let activeSignals = [];
     let isLoading = false;
+    let activeStock = null;
+    let suggestionItems = [];
+    let suggestionRequestId = 0;
+    let suggestionTimer = null;
 
     function fmt(value, digits = 2) {
       if (value === null || value === undefined || Number.isNaN(Number(value))) {
@@ -1212,15 +1275,49 @@
       return String(fullCode || "").replace(/^(sh|sz)\./i, "");
     }
 
-    function parseCode(value) {
-      const raw = String(value || "").trim().toLowerCase();
-      const withoutPrefix = raw.replace(/^(sh|sz)\./, "");
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    function marketLabelFromCode(fullCode) {
+      const code = String(fullCode || "").toLowerCase();
+      if (code.startsWith("sh.")) {
+        return "沪市";
+      }
+      if (code.startsWith("sz.")) {
+        return "深市";
+      }
+      return "";
+    }
+
+    function parseStockInput(value) {
+      const raw = String(value || "").trim();
+      const normalized = raw.toLowerCase();
+      const withoutPrefix = normalized.replace(/^(sh|sz)\./, "");
       const digits = withoutPrefix.replace(/\D/g, "").slice(0, 6);
-      if (!digits) {
-        return {digits, valid: false, message: "请输入 6 位股票代码", tone: ""};
+      const selectedMatchesInput = activeStock && (
+        raw === activeStock.name ||
+        raw === activeStock.code ||
+        normalized === activeStock.full_code
+      );
+
+      if (selectedMatchesInput) {
+        const market = activeStock.market_label || marketLabelFromCode(activeStock.full_code);
+        return {digits: activeStock.code, full: activeStock.full_code, market, valid: true, message: `${activeStock.name} ${activeStock.code}`, tone: "ok"};
+      }
+      if (!raw) {
+        return {digits, valid: false, message: "请输入股票代码或名称", tone: ""};
       }
       if (digits.length < 6) {
-        return {digits, valid: false, message: `已输入 ${digits.length}/6 位`, tone: ""};
+        return /\d/.test(raw)
+          ? {digits, valid: false, message: `已输入 ${digits.length}/6 位`, tone: ""}
+          : {digits, valid: raw.length >= 2, message: raw.length >= 2 ? "按名称匹配" : "请输入股票名称", tone: raw.length >= 2 ? "ok" : ""};
       }
       if (/^[023]/.test(digits)) {
         return {digits, full: `sz.${digits}`, market: "深市", valid: true, message: `将按深市 sz.${digits} 查询`, tone: "ok"};
@@ -1235,13 +1332,85 @@
     }
 
     function updateCodeState() {
-      const parsed = parseCode(codeInput.value);
-      codeInput.value = parsed.digits;
+      const parsed = parseStockInput(codeInput.value);
       codeHint.textContent = parsed.message;
       codeHint.className = `code-hint ${parsed.tone || ""}`.trim();
       codeMarket.textContent = parsed.market ? parsed.market : "自动识别市场";
       submitBtn.disabled = isLoading || !parsed.valid;
       return parsed;
+    }
+
+    function hideStockSuggestions() {
+      stockSuggestions.classList.add("hidden");
+      stockSuggestions.innerHTML = "";
+      suggestionItems = [];
+    }
+
+    function selectStockSuggestion(stock, shouldLoad = true) {
+      activeStock = stock;
+      codeInput.value = stock.name;
+      codeInput.dataset.fullCode = stock.full_code;
+      hideStockSuggestions();
+      updateCodeState();
+      if (shouldLoad) {
+        loadChart();
+      }
+    }
+
+    function renderStockSuggestions(items) {
+      suggestionItems = items;
+      if (!items.length || document.activeElement !== codeInput) {
+        hideStockSuggestions();
+        return;
+      }
+      stockSuggestions.innerHTML = items.map((item, index) => `
+        <button class="stock-suggestion" type="button" data-index="${index}" role="option">
+          <span class="stock-suggestion-name">${escapeHtml(item.name)}</span>
+          <span class="stock-suggestion-code">${escapeHtml(item.code)} · ${escapeHtml(item.market_label || "")}</span>
+        </button>
+      `).join("");
+      stockSuggestions.classList.remove("hidden");
+      stockSuggestions.querySelectorAll(".stock-suggestion").forEach(button => {
+        button.addEventListener("mousedown", event => {
+          event.preventDefault();
+          const stock = suggestionItems[Number(button.dataset.index)];
+          if (stock) {
+            selectStockSuggestion(stock);
+          }
+        });
+      });
+    }
+
+    async function refreshStockSuggestions() {
+      const query = codeInput.value.trim();
+      activeStock = null;
+      delete codeInput.dataset.fullCode;
+      if (!query) {
+        hideStockSuggestions();
+        updateCodeState();
+        return;
+      }
+      const requestId = ++suggestionRequestId;
+      try {
+        const response = await fetch(`/api/stocks?q=${encodeURIComponent(query)}&limit=8`);
+        const payload = await response.json();
+        if (requestId !== suggestionRequestId) {
+          return;
+        }
+        renderStockSuggestions(payload.items || []);
+      } catch (_error) {
+        if (requestId === suggestionRequestId) {
+          hideStockSuggestions();
+        }
+      } finally {
+        updateCodeState();
+      }
+    }
+
+    function scheduleStockSuggestions() {
+      window.clearTimeout(suggestionTimer);
+      updateCodeState();
+      suggestionTimer = window.setTimeout(refreshStockSuggestions, 120);
     }
 
     function showMessage(text, isError = false) {
@@ -1371,7 +1540,7 @@
       const percent = latest && previous && previous.close ? (change / previous.close) * 100 : null;
       const priceClass = change === null ? "" : change >= 0 ? "price-up" : "price-down";
 
-      chartTitle.textContent = `${displayCode(payload.code)} ${payload.level_label}`;
+      chartTitle.textContent = `${payload.stock_name || displayCode(payload.code)} ${payload.display_code || displayCode(payload.code)}`;
       chartSubtitle.textContent = `${payload.start} 至 ${payload.end} · ${candles.length} 根K线`;
       lastPriceEl.textContent = latest ? fmt(latest.close) : "-";
       lastPriceEl.className = `last-price ${priceClass}`.trim();
@@ -1548,31 +1717,45 @@
       requestAnimationFrame(() => instance.resize());
     }
 
-    function getRecentCodes() {
+    function getRecentStocks() {
       try {
-        return JSON.parse(localStorage.getItem(RECENT_CODES_KEY) || "[]");
+        const stocks = JSON.parse(localStorage.getItem(RECENT_STOCKS_KEY) || "[]");
+        if (Array.isArray(stocks) && stocks.length && typeof stocks[0] === "object") {
+          return stocks;
+        }
       } catch (_error) {
         return [];
       }
+      return [];
     }
 
-    function saveRecentCode(code) {
-      const digits = displayCode(code);
-      const next = [digits, ...getRecentCodes().filter(item => item !== digits)].slice(0, 6);
-      localStorage.setItem(RECENT_CODES_KEY, JSON.stringify(next));
-      renderRecentCodes();
+    function saveRecentStock(payload) {
+      const stock = payload.stock || {
+        code: displayCode(payload.code),
+        full_code: payload.code,
+        name: payload.stock_name || displayCode(payload.code),
+        market_label: marketLabelFromCode(payload.code)
+      };
+      const next = [stock, ...getRecentStocks().filter(item => item.full_code !== stock.full_code)].slice(0, 6);
+      localStorage.setItem(RECENT_STOCKS_KEY, JSON.stringify(next));
+      renderRecentStocks();
     }
 
-    function renderRecentCodes() {
-      const codes = getRecentCodes();
-      if (!codes.length) {
+    function renderRecentStocks() {
+      const stocks = getRecentStocks();
+      if (!stocks.length) {
         historyRow.innerHTML = `<span class="code-hint">-</span>`;
         return;
       }
-      historyRow.innerHTML = codes.map(code => `<button class="history-chip" type="button" data-code="${code}">${code}</button>`).join("");
+      historyRow.innerHTML = stocks.map(stock => `
+        <button class="history-chip" type="button" data-code="${escapeHtml(stock.full_code || stock.code)}" title="${escapeHtml(`${stock.name || stock.code} ${stock.code || ""}`)}">
+          ${escapeHtml(stock.name || stock.code)}
+        </button>
+      `).join("");
       historyRow.querySelectorAll(".history-chip").forEach(button => {
         button.addEventListener("click", () => {
           codeInput.value = button.dataset.code;
+          activeStock = null;
           updateCodeState();
           loadChart();
         });
@@ -1594,7 +1777,7 @@
         }
         showMessage("");
         renderChart(payload);
-        saveRecentCode(payload.code);
+        saveRecentStock(payload);
         setStatus("ready", "数据就绪");
         const now = new Date().toLocaleString("zh-CN", {hour12: false});
         lastUpdated.textContent = `最后更新：${now}`;
@@ -1638,8 +1821,21 @@
       loadChart();
     });
 
-    codeInput.addEventListener("input", updateCodeState);
-    codeInput.addEventListener("blur", updateCodeState);
+    codeInput.addEventListener("input", scheduleStockSuggestions);
+    codeInput.addEventListener("focus", refreshStockSuggestions);
+    codeInput.addEventListener("blur", () => {
+      window.setTimeout(hideStockSuggestions, 120);
+      updateCodeState();
+    });
+    codeInput.addEventListener("keydown", event => {
+      if (event.key === "Enter" && !stockSuggestions.classList.contains("hidden") && suggestionItems.length) {
+        event.preventDefault();
+        selectStockSuggestion(suggestionItems[0]);
+      }
+      if (event.key === "Escape") {
+        hideStockSuggestions();
+      }
+    });
 
     periodTrigger.addEventListener("click", event => {
       event.stopPropagation();
@@ -1658,11 +1854,15 @@
       if (!periodSelect.contains(event.target)) {
         closePeriodMenu();
       }
+      if (!stockSuggestions.contains(event.target) && event.target !== codeInput) {
+        hideStockSuggestions();
+      }
     });
 
     document.addEventListener("keydown", event => {
       if (event.key === "Escape") {
         closePeriodMenu();
+        hideStockSuggestions();
       }
     });
 
@@ -1698,7 +1898,7 @@
     });
 
     updateCodeState();
-    renderRecentCodes();
+    renderRecentStocks();
     setLevel("day");
     loadChart();
   </script>

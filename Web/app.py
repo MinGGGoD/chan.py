@@ -47,6 +47,7 @@ SHORT_CODE_RE = re.compile(r"^\d{6}$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 MA_WINDOWS = (5, 10, 20, 30)
 ECHARTS_JS_URL = "/static/vendor/echarts.min.js"
+STOCKS_JSON_PATH = ROOT_DIR / "Dataset" / "stocks.json"
 
 
 def default_start() -> str:
@@ -67,10 +68,127 @@ def normalize_date(value: str | None, fallback: str, field_name: str) -> str:
     return value
 
 
+def normalize_stock_record(record: dict[str, Any]) -> dict[str, Any]:
+    code = str(record.get("code", "")).strip().zfill(6)
+    full_code = str(record.get("full_code", "")).strip().lower()
+    if not full_code and record.get("market"):
+        full_code = f"{str(record['market']).lower()}.{code}"
+    market = full_code.split(".", 1)[0] if "." in full_code else str(record.get("market", "")).lower()
+    return {
+        "code": code,
+        "full_code": full_code,
+        "market": market,
+        "name": str(record.get("name") or code).strip(),
+        "extended_name": str(record.get("extended_name") or record.get("name") or code).strip(),
+        "b_code": record.get("b_code"),
+        "english_name": str(record.get("english_name") or "").strip(),
+        "list_date": str(record.get("list_date") or "").strip(),
+    }
+
+
+@lru_cache(maxsize=1)
+def load_stock_records() -> tuple[dict[str, Any], ...]:
+    if not STOCKS_JSON_PATH.exists():
+        return tuple()
+    records = json.loads(STOCKS_JSON_PATH.read_text(encoding="utf-8"))
+    return tuple(normalize_stock_record(record) for record in records)
+
+
+@lru_cache(maxsize=1)
+def build_stock_indexes() -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    by_full_code: dict[str, dict[str, Any]] = {}
+    by_code: dict[str, dict[str, Any]] = {}
+    by_name: dict[str, dict[str, Any]] = {}
+    for record in load_stock_records():
+        by_full_code[record["full_code"]] = record
+        by_code.setdefault(record["code"], record)
+        by_name.setdefault(record["name"].lower(), record)
+        by_name.setdefault(record["extended_name"].lower(), record)
+    return by_full_code, by_code, by_name
+
+
+def public_stock_record(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "code": record["code"],
+        "full_code": record["full_code"],
+        "market": record["market"],
+        "market_label": "沪市" if record["market"] == "sh" else "深市" if record["market"] == "sz" else record["market"],
+        "name": record["name"],
+        "extended_name": record["extended_name"],
+        "label": f"{record['name']} {record['code']}",
+        "title": f"{record['name']} {record['code']}",
+    }
+
+
+def get_stock_by_code(code: str) -> dict[str, Any] | None:
+    by_full_code, by_code, _ = build_stock_indexes()
+    code = code.strip().lower()
+    if code in by_full_code:
+        return by_full_code[code]
+    digits = re.sub(r"\D", "", code)
+    if len(digits) == 6:
+        return by_code.get(digits)
+    return None
+
+
+def search_stock_records(query: str | None, limit: int = 10) -> list[dict[str, Any]]:
+    text = (query or "").strip()
+    if not text:
+        return []
+    text_lower = text.lower()
+    digits = re.sub(r"\D", "", text)
+    matches: list[tuple[int, dict[str, Any]]] = []
+
+    for idx, record in enumerate(load_stock_records()):
+        score: int | None = None
+        if text_lower == record["full_code"] or digits == record["code"]:
+            score = 0
+        elif digits and record["code"].startswith(digits):
+            score = 10 + len(record["code"]) - len(digits)
+        elif text_lower == record["name"].lower() or text_lower == record["extended_name"].lower():
+            score = 20
+        elif record["name"].lower().startswith(text_lower) or record["extended_name"].lower().startswith(text_lower):
+            score = 30
+        elif text_lower in record["name"].lower() or text_lower in record["extended_name"].lower():
+            score = 40
+        elif text_lower and text_lower in record["full_code"]:
+            score = 50
+
+        if score is not None:
+            matches.append((score * 100000 + idx, record))
+
+    matches.sort(key=lambda item: item[0])
+    return [record for _, record in matches[:limit]]
+
+
+def resolve_stock_query(value: str | None) -> dict[str, Any] | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    by_full_code, by_code, by_name = build_stock_indexes()
+    text_lower = text.lower()
+    if text_lower in by_full_code:
+        return by_full_code[text_lower]
+    if text_lower in by_name:
+        return by_name[text_lower]
+    digits = re.sub(r"\D", "", text)
+    if len(digits) == 6 and digits in by_code:
+        return by_code[digits]
+    matches = search_stock_records(text, limit=1)
+    return matches[0] if matches else None
+
+
 def normalize_stock_code(value: str | None) -> str:
+    stock = resolve_stock_query(value)
+    if stock is not None:
+        return stock["full_code"]
+
     code = (value or "000001").strip().lower()
     if FULL_CODE_RE.match(code):
         return code
+    digits = re.sub(r"\D", "", code)
+    if len(digits) == 6:
+        code = digits
     if not SHORT_CODE_RE.match(code):
         raise ValueError("股票代码请输入 6 位数字，如 000001 或 600519")
 
@@ -459,6 +577,17 @@ def build_pyecharts_option(payload: dict[str, Any]) -> dict[str, Any]:
 
 @lru_cache(maxsize=32)
 def build_chart_payload(code: str, level: str, start: str, end: str) -> dict[str, Any]:
+    stock = get_stock_by_code(code)
+    stock_payload = public_stock_record(stock) if stock else {
+        "code": code.split(".", 1)[-1],
+        "full_code": code,
+        "market": code.split(".", 1)[0] if "." in code else "",
+        "market_label": "沪市" if code.startswith("sh.") else "深市" if code.startswith("sz.") else "",
+        "name": code.split(".", 1)[-1],
+        "extended_name": code.split(".", 1)[-1],
+        "label": code.split(".", 1)[-1],
+        "title": code.split(".", 1)[-1],
+    }
     chan = CChan(
         code=code,
         begin_time=start,
@@ -480,6 +609,9 @@ def build_chart_payload(code: str, level: str, start: str, end: str) -> dict[str
     payload = {
         "success": True,
         "code": code,
+        "display_code": stock_payload["code"],
+        "stock_name": stock_payload["name"],
+        "stock": stock_payload,
         "level": level,
         "level_label": LEVEL_LABEL[level],
         "start": start,
@@ -509,6 +641,19 @@ def index():
         default_end=default_end(),
         echarts_js_url=ECHARTS_JS_URL,
     )
+
+
+@app.get("/api/stocks")
+def api_stocks():
+    try:
+        limit = int(request.args.get("limit", 10))
+    except ValueError:
+        limit = 10
+    limit = min(max(limit, 1), 20)
+    return jsonify({
+        "success": True,
+        "items": [public_stock_record(record) for record in search_stock_records(request.args.get("q"), limit=limit)],
+    })
 
 
 @app.get("/api/chart")
