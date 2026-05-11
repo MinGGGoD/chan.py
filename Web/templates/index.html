@@ -1039,7 +1039,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-main"><span class="brand-mark"></span>缠论助手</div>
-        <div class="brand-sub">chan.py Baostock 单股分析</div>
+        <div class="brand-sub">chan.py Baostock 股票/ETF 分析</div>
       </div>
       <div class="top-status">
         <span class="status-pill"><i id="status-dot" class="status-dot"></i><span id="status-text">数据就绪</span></span>
@@ -1050,14 +1050,14 @@
     <main class="workspace">
       <aside class="left-rail">
         <section class="panel">
-          <h2 class="panel-title">股票查询 <span id="code-market" class="panel-kicker">自动识别市场</span></h2>
+          <h2 class="panel-title">证券查询 <span id="code-market" class="panel-kicker">自动识别市场</span></h2>
           <form id="chart-form" class="search-form">
             <div class="search-box">
               <div class="search-row">
-                <input id="code" class="code-input" name="code" value="{{ default_code }}" autocomplete="off" spellcheck="false" maxlength="32" aria-label="股票代码或股票名称">
+                <input id="code" class="code-input" name="code" value="{{ default_code }}" autocomplete="off" spellcheck="false" maxlength="32" aria-label="股票/ETF代码或名称">
                 <button id="submit-btn" class="primary-btn" type="submit">刷新</button>
               </div>
-              <div id="stock-suggestions" class="stock-suggestions hidden" role="listbox" aria-label="股票联想"></div>
+              <div id="stock-suggestions" class="stock-suggestions hidden" role="listbox" aria-label="股票/ETF联想"></div>
               <div id="code-hint" class="code-hint"></div>
             </div>
 
@@ -1303,23 +1303,29 @@
       const digits = withoutPrefix.replace(/\D/g, "").slice(0, 6);
       const selectedMatchesInput = activeStock && (
         raw === activeStock.name ||
+        raw === activeStock.extended_name ||
         raw === activeStock.code ||
         normalized === activeStock.full_code
       );
 
       if (selectedMatchesInput) {
-        const market = activeStock.market_label || marketLabelFromCode(activeStock.full_code);
-        return {digits: activeStock.code, full: activeStock.full_code, market, valid: true, message: `${activeStock.name} ${activeStock.code}`, tone: "ok"};
+        const marketParts = [
+          activeStock.market_label || marketLabelFromCode(activeStock.full_code),
+          activeStock.type_label
+        ].filter(Boolean);
+        const market = marketParts.join(" · ");
+        const typeSuffix = activeStock.type_label ? ` · ${activeStock.type_label}` : "";
+        return {digits: activeStock.code, full: activeStock.full_code, market, valid: true, message: `${activeStock.name} ${activeStock.code}${typeSuffix}`, tone: "ok"};
       }
       if (!raw) {
-        return {digits, valid: false, message: "请输入股票代码或名称", tone: ""};
+        return {digits, valid: false, message: "请输入股票/ETF代码或名称", tone: ""};
       }
       if (digits.length < 6) {
         return /\d/.test(raw)
           ? {digits, valid: false, message: `已输入 ${digits.length}/6 位`, tone: ""}
-          : {digits, valid: raw.length >= 2, message: raw.length >= 2 ? "按名称匹配" : "请输入股票名称", tone: raw.length >= 2 ? "ok" : ""};
+          : {digits, valid: raw.length >= 2, message: raw.length >= 2 ? "按名称匹配" : "请输入证券名称", tone: raw.length >= 2 ? "ok" : ""};
       }
-      if (/^[023]/.test(digits)) {
+      if (/^[0123]/.test(digits)) {
         return {digits, full: `sz.${digits}`, market: "深市", valid: true, message: `将按深市 sz.${digits} 查询`, tone: "ok"};
       }
       if (/^[569]/.test(digits)) {
@@ -1328,7 +1334,7 @@
       if (/^[48]/.test(digits)) {
         return {digits, valid: false, message: "北交所代码暂不支持 Baostock 绘图", tone: "error"};
       }
-      return {digits, valid: false, message: "无法识别交易所", tone: "error"};
+      return {digits, valid: false, message: "无法识别交易所，请输入沪深股票/ETF代码", tone: "error"};
     }
 
     function updateCodeState() {
@@ -1363,12 +1369,15 @@
         hideStockSuggestions();
         return;
       }
-      stockSuggestions.innerHTML = items.map((item, index) => `
-        <button class="stock-suggestion" type="button" data-index="${index}" role="option">
-          <span class="stock-suggestion-name">${escapeHtml(item.name)}</span>
-          <span class="stock-suggestion-code">${escapeHtml(item.code)} · ${escapeHtml(item.market_label || "")}</span>
-        </button>
-      `).join("");
+      stockSuggestions.innerHTML = items.map((item, index) => {
+        const meta = [item.code, item.market_label, item.type_label].filter(Boolean).join(" · ");
+        return `
+          <button class="stock-suggestion" type="button" data-index="${index}" role="option">
+            <span class="stock-suggestion-name">${escapeHtml(item.name)}</span>
+            <span class="stock-suggestion-code">${escapeHtml(meta)}</span>
+          </button>
+        `;
+      }).join("");
       stockSuggestions.classList.remove("hidden");
       stockSuggestions.querySelectorAll(".stock-suggestion").forEach(button => {
         button.addEventListener("mousedown", event => {
@@ -1734,7 +1743,9 @@
         code: displayCode(payload.code),
         full_code: payload.code,
         name: payload.stock_name || displayCode(payload.code),
-        market_label: marketLabelFromCode(payload.code)
+        market_label: marketLabelFromCode(payload.code),
+        asset_type: "stock",
+        type_label: "股票"
       };
       const next = [stock, ...getRecentStocks().filter(item => item.full_code !== stock.full_code)].slice(0, 6);
       localStorage.setItem(RECENT_STOCKS_KEY, JSON.stringify(next));

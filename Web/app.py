@@ -46,6 +46,7 @@ FULL_CODE_RE = re.compile(r"^(sh|sz)\.\d{6}$", re.IGNORECASE)
 SHORT_CODE_RE = re.compile(r"^\d{6}$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 MA_WINDOWS = (5, 10, 20, 30)
+MINUTE_LEVELS = {"5m", "30m", "60m"}
 ECHARTS_JS_URL = "/static/vendor/echarts.min.js"
 STOCKS_JSON_PATH = ROOT_DIR / "Dataset" / "stocks.json"
 
@@ -74,15 +75,21 @@ def normalize_stock_record(record: dict[str, Any]) -> dict[str, Any]:
     if not full_code and record.get("market"):
         full_code = f"{str(record['market']).lower()}.{code}"
     market = full_code.split(".", 1)[0] if "." in full_code else str(record.get("market", "")).lower()
+    name = str(record.get("name") or code).strip()
+    extended_name = str(record.get("extended_name") or record.get("name") or code).strip()
+    english_name = str(record.get("english_name") or "").strip()
+    asset_type = "etf" if "etf" in f"{name} {extended_name} {english_name}".lower() else "stock"
     return {
         "code": code,
         "full_code": full_code,
         "market": market,
-        "name": str(record.get("name") or code).strip(),
-        "extended_name": str(record.get("extended_name") or record.get("name") or code).strip(),
+        "name": name,
+        "extended_name": extended_name,
         "b_code": record.get("b_code"),
-        "english_name": str(record.get("english_name") or "").strip(),
+        "english_name": english_name,
         "list_date": str(record.get("list_date") or "").strip(),
+        "asset_type": asset_type,
+        "type_label": "ETF" if asset_type == "etf" else "股票",
     }
 
 
@@ -104,6 +111,8 @@ def build_stock_indexes() -> tuple[dict[str, dict[str, Any]], dict[str, dict[str
         by_code.setdefault(record["code"], record)
         by_name.setdefault(record["name"].lower(), record)
         by_name.setdefault(record["extended_name"].lower(), record)
+        if record["english_name"]:
+            by_name.setdefault(record["english_name"].lower(), record)
     return by_full_code, by_code, by_name
 
 
@@ -115,6 +124,8 @@ def public_stock_record(record: dict[str, Any]) -> dict[str, Any]:
         "market_label": "沪市" if record["market"] == "sh" else "深市" if record["market"] == "sz" else record["market"],
         "name": record["name"],
         "extended_name": record["extended_name"],
+        "asset_type": record["asset_type"],
+        "type_label": record["type_label"],
         "label": f"{record['name']} {record['code']}",
         "title": f"{record['name']} {record['code']}",
     }
@@ -137,19 +148,36 @@ def search_stock_records(query: str | None, limit: int = 10) -> list[dict[str, A
         return []
     text_lower = text.lower()
     digits = re.sub(r"\D", "", text)
+    normalized_code_query = re.sub(r"\s+", "", text_lower)
+    is_code_like = bool(re.fullmatch(r"(?:sh|sz)?\.?\d{1,6}", normalized_code_query))
+    tokens = [token for token in re.split(r"\s+", text_lower) if token]
     matches: list[tuple[int, dict[str, Any]]] = []
 
     for idx, record in enumerate(load_stock_records()):
+        name_lower = record["name"].lower()
+        extended_name_lower = record["extended_name"].lower()
+        english_name_lower = record["english_name"].lower()
+        searchable_text = " ".join([
+            record["code"],
+            record["full_code"],
+            name_lower,
+            extended_name_lower,
+            english_name_lower,
+            record["asset_type"],
+            record["type_label"].lower(),
+        ])
         score: int | None = None
         if text_lower == record["full_code"] or digits == record["code"]:
             score = 0
-        elif digits and record["code"].startswith(digits):
+        elif is_code_like and digits and record["code"].startswith(digits):
             score = 10 + len(record["code"]) - len(digits)
-        elif text_lower == record["name"].lower() or text_lower == record["extended_name"].lower():
+        elif text_lower in {name_lower, extended_name_lower, english_name_lower}:
             score = 20
-        elif record["name"].lower().startswith(text_lower) or record["extended_name"].lower().startswith(text_lower):
+        elif name_lower.startswith(text_lower) or extended_name_lower.startswith(text_lower) or english_name_lower.startswith(text_lower):
             score = 30
-        elif text_lower in record["name"].lower() or text_lower in record["extended_name"].lower():
+        elif tokens and all(token in searchable_text for token in tokens):
+            score = 35
+        elif text_lower in name_lower or text_lower in extended_name_lower or text_lower in english_name_lower:
             score = 40
         elif text_lower and text_lower in record["full_code"]:
             score = 50
@@ -190,15 +218,15 @@ def normalize_stock_code(value: str | None) -> str:
     if len(digits) == 6:
         code = digits
     if not SHORT_CODE_RE.match(code):
-        raise ValueError("股票代码请输入 6 位数字，如 000001 或 600519")
+        raise ValueError("股票/ETF代码请输入 6 位数字，如 000001、600519 或 510050")
 
     if code.startswith(("5", "6", "9")):
         return f"sh.{code}"
-    if code.startswith(("0", "2", "3")):
+    if code.startswith(("0", "1", "2", "3")):
         return f"sz.{code}"
     if code.startswith(("4", "8")):
-        raise ValueError("当前 Baostock 绘图首版只支持沪深 A 股，暂不支持北交所代码")
-    raise ValueError("无法根据该代码判断交易所，请检查是否为沪深 A 股 6 位代码")
+        raise ValueError("当前 Baostock 绘图首版只支持沪深股票/ETF，暂不支持北交所代码")
+    raise ValueError("无法根据该代码判断交易所，请检查是否为沪深股票/ETF 6 位代码")
 
 
 def normalize_request_args(args) -> tuple[str, str, str, str]:
@@ -252,7 +280,7 @@ def build_date_ticks(candles: list[dict[str, Any]], level: str) -> list[dict[str
     if not candles:
         return []
 
-    is_minute_level = level in {"5m", "30m", "60m"}
+    is_minute_level = level in MINUTE_LEVELS
     target_count = 18 if is_minute_level else 14 if level == "day" else 16
     tick_indexes: list[int] = []
     seen_periods = set()
@@ -585,23 +613,38 @@ def build_chart_payload(code: str, level: str, start: str, end: str) -> dict[str
         "market_label": "沪市" if code.startswith("sh.") else "深市" if code.startswith("sz.") else "",
         "name": code.split(".", 1)[-1],
         "extended_name": code.split(".", 1)[-1],
+        "asset_type": "stock",
+        "type_label": "股票",
         "label": code.split(".", 1)[-1],
         "title": code.split(".", 1)[-1],
     }
-    chan = CChan(
-        code=code,
-        begin_time=start,
-        end_time=end,
-        data_src=DATA_SRC.BAO_STOCK,
-        lv_list=[LEVEL_MAP[level]],
-        config=build_config(),
-        autype=AUTYPE.QFQ,
-    )
-    kl_list = chan[0]
-    meta = CChanPlotMeta(kl_list)
+    try:
+        chan = CChan(
+            code=code,
+            begin_time=start,
+            end_time=end,
+            data_src=DATA_SRC.BAO_STOCK,
+            lv_list=[LEVEL_MAP[level]],
+            config=build_config(),
+            autype=AUTYPE.QFQ,
+        )
+        kl_list = chan[0]
+        meta = CChanPlotMeta(kl_list)
+    except Exception as exc:
+        if stock_payload["asset_type"] == "etf":
+            if level in MINUTE_LEVELS:
+                message = f"{stock_payload['name']} {stock_payload['code']} 的分钟级行情暂不可用：{exc}。请切换日线、周线或月线。"
+            else:
+                message = f"Baostock 未返回 {stock_payload['name']} {stock_payload['code']} 的 {LEVEL_LABEL[level]} 行情，请稍后重试或更换证券。"
+            raise ValueError(message) from exc
+        raise
     candles = [serialize_klu(klu) for klu in meta.klu_iter()]
     if not candles:
-        raise ValueError("没有获取到 K 线数据，请检查股票代码或日期范围")
+        if stock_payload["asset_type"] == "etf":
+            if level in MINUTE_LEVELS:
+                raise ValueError(f"{stock_payload['name']} {stock_payload['code']} 当前分钟周期没有可用 K 线，请切换日线、周线或月线。")
+            raise ValueError(f"Baostock 未返回 {stock_payload['name']} {stock_payload['code']} 的 {LEVEL_LABEL[level]} 行情，请稍后重试或更换证券。")
+        raise ValueError("没有获取到 K 线数据，请检查证券代码或日期范围")
 
     closes = [float(item["close"]) for item in candles]
     ma = {f"ma{window}": moving_average(closes, window) for window in MA_WINDOWS}
