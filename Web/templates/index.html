@@ -964,6 +964,35 @@
       font-size: 12px;
     }
 
+    .floating-scan-link {
+      position: fixed;
+      z-index: 30;
+      right: 18px;
+      top: 50%;
+      transform: translateY(-50%);
+      min-width: 44px;
+      min-height: 116px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 10px;
+      border: 1px solid rgba(74, 168, 255, 0.66);
+      border-radius: 8px 0 0 8px;
+      background: rgba(21, 29, 49, 0.96);
+      color: #d9e4f7;
+      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+      text-decoration: none;
+      font-weight: 900;
+      letter-spacing: 0;
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+    }
+
+    .floating-scan-link:hover {
+      background: rgba(61, 160, 255, 0.18);
+      color: #fff;
+    }
+
     @media (max-width: 1320px) {
       .workspace {
         grid-template-columns: 260px minmax(480px, 1fr) 320px;
@@ -1188,6 +1217,7 @@
     <footer class="footerbar">
       <span id="footer-text">就绪</span>
     </footer>
+    <a class="floating-scan-link" href="/scan">全市场扫描</a>
   </div>
 
   <script>

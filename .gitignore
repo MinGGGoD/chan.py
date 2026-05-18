@@ -4,6 +4,8 @@ __pycache__
 *.vscode
 *.log
 *.db
+dist/
+Web/data/scan_results/
 config.yaml
 OpenConfig.yaml
 gotify_push.py

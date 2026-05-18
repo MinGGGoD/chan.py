@@ -49,6 +49,9 @@ MA_WINDOWS = (5, 10, 20, 30)
 MINUTE_LEVELS = {"5m", "30m", "60m"}
 ECHARTS_JS_URL = "/static/vendor/echarts.min.js"
 STOCKS_JSON_PATH = ROOT_DIR / "Dataset" / "stocks.json"
+SCAN_RESULTS_DIR = ROOT_DIR / "Web" / "data" / "scan_results"
+SCAN_LATEST_PATH = SCAN_RESULTS_DIR / "latest_scan.json"
+SCAN_ERRORS_PATH = SCAN_RESULTS_DIR / "errors.json"
 
 
 def default_start() -> str:
@@ -129,6 +132,30 @@ def public_stock_record(record: dict[str, Any]) -> dict[str, Any]:
         "label": f"{record['name']} {record['code']}",
         "title": f"{record['name']} {record['code']}",
     }
+
+
+def read_json_file(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def safe_scan_stock_filename(value: str) -> str:
+    code = str(value or "").strip().lower()
+    code = code.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    if code.endswith(".json"):
+        code = code[:-5]
+    if not re.fullmatch(r"(?:[a-z]{2}\.)?\d{6}", code):
+        raise ValueError("股票代码格式不正确")
+    return f"{code.split('.', 1)[-1]}.json"
+
+
+def scan_data_file_path(value: str) -> Path:
+    filename = safe_scan_stock_filename(value)
+    path = SCAN_RESULTS_DIR / "stocks" / filename
+    try:
+        path.resolve().relative_to((SCAN_RESULTS_DIR / "stocks").resolve())
+    except ValueError:
+        raise ValueError("股票代码格式不正确")
+    return path
 
 
 def get_stock_by_code(code: str) -> dict[str, Any] | None:
@@ -603,47 +630,36 @@ def build_pyecharts_option(payload: dict[str, Any]) -> dict[str, Any]:
     return option
 
 
-@lru_cache(maxsize=32)
-def build_chart_payload(code: str, level: str, start: str, end: str) -> dict[str, Any]:
-    stock = get_stock_by_code(code)
-    stock_payload = public_stock_record(stock) if stock else {
-        "code": code.split(".", 1)[-1],
+def fallback_stock_payload(code: str) -> dict[str, Any]:
+    display_code = code.split(".", 1)[-1]
+    market = code.split(".", 1)[0] if "." in code else ""
+    return {
+        "code": display_code,
         "full_code": code,
-        "market": code.split(".", 1)[0] if "." in code else "",
-        "market_label": "沪市" if code.startswith("sh.") else "深市" if code.startswith("sz.") else "",
-        "name": code.split(".", 1)[-1],
-        "extended_name": code.split(".", 1)[-1],
+        "market": market,
+        "market_label": "沪市" if code.startswith("sh.") else "深市" if code.startswith("sz.") else "北交所" if code.startswith("bj.") else "",
+        "name": display_code,
+        "extended_name": display_code,
         "asset_type": "stock",
         "type_label": "股票",
-        "label": code.split(".", 1)[-1],
-        "title": code.split(".", 1)[-1],
+        "label": display_code,
+        "title": display_code,
     }
-    try:
-        chan = CChan(
-            code=code,
-            begin_time=start,
-            end_time=end,
-            data_src=DATA_SRC.BAO_STOCK,
-            lv_list=[LEVEL_MAP[level]],
-            config=build_config(),
-            autype=AUTYPE.QFQ,
-        )
-        kl_list = chan[0]
-        meta = CChanPlotMeta(kl_list)
-    except Exception as exc:
-        if stock_payload["asset_type"] == "etf":
-            if level in MINUTE_LEVELS:
-                message = f"{stock_payload['name']} {stock_payload['code']} 的分钟级行情暂不可用：{exc}。请切换日线、周线或月线。"
-            else:
-                message = f"Baostock 未返回 {stock_payload['name']} {stock_payload['code']} 的 {LEVEL_LABEL[level]} 行情，请稍后重试或更换证券。"
-            raise ValueError(message) from exc
-        raise
+
+
+def build_chart_payload_from_chan(
+    chan: CChan,
+    code: str,
+    level: str,
+    start: str,
+    end: str,
+    stock_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    stock_payload = stock_payload or fallback_stock_payload(code)
+    kl_list = chan[0]
+    meta = CChanPlotMeta(kl_list)
     candles = [serialize_klu(klu) for klu in meta.klu_iter()]
     if not candles:
-        if stock_payload["asset_type"] == "etf":
-            if level in MINUTE_LEVELS:
-                raise ValueError(f"{stock_payload['name']} {stock_payload['code']} 当前分钟周期没有可用 K 线，请切换日线、周线或月线。")
-            raise ValueError(f"Baostock 未返回 {stock_payload['name']} {stock_payload['code']} 的 {LEVEL_LABEL[level]} 行情，请稍后重试或更换证券。")
         raise ValueError("没有获取到 K 线数据，请检查证券代码或日期范围")
 
     closes = [float(item["close"]) for item in candles]
@@ -656,7 +672,7 @@ def build_chart_payload(code: str, level: str, start: str, end: str) -> dict[str
         "stock_name": stock_payload["name"],
         "stock": stock_payload,
         "level": level,
-        "level_label": LEVEL_LABEL[level],
+        "level_label": LEVEL_LABEL.get(level, level),
         "start": start,
         "end": end,
         "candles": candles,
@@ -675,6 +691,31 @@ def build_chart_payload(code: str, level: str, start: str, end: str) -> dict[str
     return payload
 
 
+@lru_cache(maxsize=32)
+def build_chart_payload(code: str, level: str, start: str, end: str) -> dict[str, Any]:
+    stock = get_stock_by_code(code)
+    stock_payload = public_stock_record(stock) if stock else fallback_stock_payload(code)
+    try:
+        chan = CChan(
+            code=code,
+            begin_time=start,
+            end_time=end,
+            data_src=DATA_SRC.BAO_STOCK,
+            lv_list=[LEVEL_MAP[level]],
+            config=build_config(),
+            autype=AUTYPE.QFQ,
+        )
+        return build_chart_payload_from_chan(chan, code, level, start, end, stock_payload)
+    except Exception as exc:
+        if stock_payload["asset_type"] == "etf":
+            if level in MINUTE_LEVELS:
+                message = f"{stock_payload['name']} {stock_payload['code']} 的分钟级行情暂不可用：{exc}。请切换日线、周线或月线。"
+            else:
+                message = f"Baostock 未返回 {stock_payload['name']} {stock_payload['code']} 的 {LEVEL_LABEL[level]} 行情，请稍后重试或更换证券。"
+            raise ValueError(message) from exc
+        raise
+
+
 @app.get("/")
 def index():
     return render_template(
@@ -684,6 +725,11 @@ def index():
         default_end=default_end(),
         echarts_js_url=ECHARTS_JS_URL,
     )
+
+
+@app.get("/scan")
+def scan_page():
+    return render_template("scan.html", echarts_js_url=ECHARTS_JS_URL)
 
 
 @app.get("/api/stocks")
@@ -697,6 +743,56 @@ def api_stocks():
         "success": True,
         "items": [public_stock_record(record) for record in search_stock_records(request.args.get("q"), limit=limit)],
     })
+
+
+@app.get("/api/scan/latest")
+def api_scan_latest():
+    if not SCAN_LATEST_PATH.exists():
+        return jsonify({
+            "success": True,
+            "exists": False,
+            "overview": None,
+            "stocks": [],
+            "message": "暂无扫描结果，请先运行全市场扫描脚本。",
+        })
+
+    try:
+        payload = read_json_file(SCAN_LATEST_PATH)
+        return jsonify({
+            "success": True,
+            "exists": True,
+            **payload,
+        })
+    except Exception as exc:
+        return jsonify({
+            "success": False,
+            "exists": False,
+            "error": f"读取扫描结果失败：{exc}",
+        }), 500
+
+
+@app.get("/api/scan/stock/<path:stock_code>")
+def api_scan_stock(stock_code: str):
+    try:
+        stock_path = scan_data_file_path(stock_code)
+        if not stock_path.exists():
+            return jsonify({
+                "success": False,
+                "error": "未找到该股票的扫描明细，请重新运行扫描脚本。",
+            }), 404
+        payload = read_json_file(stock_path)
+        payload["success"] = True
+        return jsonify(payload)
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+        }), 400
+    except Exception as exc:
+        return jsonify({
+            "success": False,
+            "error": f"读取股票扫描明细失败：{exc}",
+        }), 500
 
 
 @app.get("/api/chart")
