@@ -5,6 +5,7 @@ __pycache__
 *.log
 *.db
 dist/
+Web/data/industry/
 Web/data/scan_results/
 config.yaml
 OpenConfig.yaml

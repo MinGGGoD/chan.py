@@ -192,7 +192,7 @@
     }
 
     .left-rail {
-      grid-template-rows: auto auto minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr) auto;
     }
 
     .right-rail {
@@ -233,31 +233,46 @@
 
     .stat-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
+      gap: 4px;
     }
 
     .stat-cell {
-      min-height: 58px;
-      padding: 10px;
+      min-height: 28px;
+      padding: 4px 0;
       border: 1px solid #24304a;
-      border-radius: 6px;
-      background: #121a2d;
+      border-width: 0 0 1px;
+      border-radius: 0;
+      background: transparent;
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
     }
 
     .stat-label {
       color: var(--muted);
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 800;
     }
 
     .stat-value {
-      margin-top: 7px;
+      margin-top: 0;
       color: var(--text);
-      font-size: 18px;
+      font-size: 13px;
       font-weight: 900;
       font-variant-numeric: tabular-nums;
+      text-align: right;
       word-break: break-word;
+    }
+
+    .overview-panel {
+      padding: 9px 12px;
+    }
+
+    .overview-panel .panel-title {
+      margin-bottom: 6px;
+      padding-bottom: 6px;
+      font-size: 13px;
     }
 
     .filter-grid {
@@ -855,11 +870,6 @@
     <main class="workspace">
       <aside class="left-rail">
         <section class="panel">
-          <h2 class="panel-title">扫描概览 <span id="scan-time" class="panel-kicker">-</span></h2>
-          <div id="overview-grid" class="stat-grid"></div>
-        </section>
-
-        <section class="panel">
           <h2 class="panel-title">筛选 <span id="filter-count" class="panel-kicker">0 只</span></h2>
           <div class="filter-grid">
             <div>
@@ -882,10 +892,30 @@
                 </select>
               </div>
             </div>
+            <div>
+              <span class="field-label">板块</span>
+              <select id="board-filter" class="filter-select">
+                <option value="all">全部</option>
+                <option value="star">科创板</option>
+                <option value="growth">创业板</option>
+                <option value="other">其他</option>
+              </select>
+            </div>
+            <div>
+              <span class="field-label">行业</span>
+              <select id="industry-filter" class="filter-select">
+                <option value="all">全部</option>
+              </select>
+            </div>
           </div>
         </section>
 
         <section id="stock-list" class="panel stock-list"></section>
+
+        <section class="panel overview-panel">
+          <h2 class="panel-title">扫描概览 <span id="scan-time" class="panel-kicker">-</span></h2>
+          <div id="overview-grid" class="stat-grid"></div>
+        </section>
       </aside>
 
       <section class="chart-panel">
@@ -968,6 +998,8 @@
     const searchInput = document.getElementById("search-input");
     const directionFilter = document.getElementById("direction-filter");
     const typeFilter = document.getElementById("type-filter");
+    const boardFilter = document.getElementById("board-filter");
+    const industryFilter = document.getElementById("industry-filter");
     const filterCount = document.getElementById("filter-count");
     const chartEl = document.getElementById("scan-chart");
     const message = document.getElementById("message");
@@ -1071,12 +1103,10 @@
     function renderOverview(payload) {
       scanTime.textContent = payload.scan_time || "-";
       const items = [
-        ["扫描股票", payload.total_scanned],
-        ["命中股票", payload.matched_count],
-        ["错误股票", payload.error_count],
-        ["判断窗口", `最近 ${payload.recent_k_count || 7} 根`],
+        ["扫描/命中/错误", `${payload.total_scanned ?? "-"} / ${payload.matched_count ?? "-"} / ${payload.error_count ?? "-"}`],
+        ["窗口/周期", `最近 ${payload.recent_k_count || 7} 根 / ${payload.level === "daily" ? "日线" : payload.level || "-"}`],
         ["数据范围", `${payload.start_date || "-"} / ${payload.end_date || "-"}`],
-        ["周期", payload.level === "daily" ? "日线" : payload.level || "-"]
+        ["行业更新/数量", `${(payload.industry_cache?.update_dates || [])[0] || "-"} / ${(payload.industry_cache?.industries || []).length || "-"}`]
       ];
       overviewGrid.innerHTML = items.map(([label, value]) => `
         <div class="stat-cell">
@@ -1100,11 +1130,37 @@
       )).join("");
     }
 
+    function populateIndustryFilter() {
+      const industries = new Set();
+      stocks.forEach(stock => {
+        if (stock.industry) {
+          industries.add(stock.industry);
+        }
+      });
+      industryFilter.innerHTML = `<option value="all">全部</option>` + [...industries].sort().map(industry => (
+        `<option value="${escapeHtml(industry)}">${escapeHtml(industry)}</option>`
+      )).join("");
+    }
+
+    function getStockBoard(stock) {
+      const code = String(stock.code || stock.display_code || stock.full_code || "").replace(/\D/g, "");
+      if (code.startsWith("688") || code.startsWith("689")) {
+        return {value: "star", label: "科创板"};
+      }
+      if (code.startsWith("300") || code.startsWith("301")) {
+        return {value: "growth", label: "创业板"};
+      }
+      return {value: "other", label: "其他"};
+    }
+
     function stockMatchesFilters(stock) {
       const query = searchInput.value.trim().toLowerCase();
       const direction = directionFilter.value;
       const type = typeFilter.value;
-      const text = `${stock.code || ""} ${stock.name || ""} ${stock.full_code || ""}`.toLowerCase();
+      const board = boardFilter.value;
+      const industry = industryFilter.value;
+      const stockBoard = getStockBoard(stock);
+      const text = `${stock.code || ""} ${stock.name || ""} ${stock.full_code || ""} ${stock.industry || ""} ${stockBoard.label}`.toLowerCase();
       if (query && !text.includes(query)) {
         return false;
       }
@@ -1113,6 +1169,12 @@
         return false;
       }
       if (type !== "all" && !signals.some(signal => signal.display_type === type)) {
+        return false;
+      }
+      if (board !== "all" && stockBoard.value !== board) {
+        return false;
+      }
+      if (industry !== "all" && stock.industry !== industry) {
         return false;
       }
       return true;
@@ -1135,7 +1197,7 @@
               <span class="stock-title">${escapeHtml(stock.name)} <span class="stock-code">${escapeHtml(stock.code)}</span></span>
               <span class="stock-code">${escapeHtml(stock.market || "")}</span>
             </span>
-            <span class="stock-meta">${escapeHtml(stock.latest_date || "-")} · 收盘 ${fmt(stock.latest_close)} · ${stock.signal_count || (stock.signals || []).length} 个信号</span>
+            <span class="stock-meta">${escapeHtml(stock.latest_date || "-")} · ${escapeHtml(stock.industry || "未分类")} · 收盘 ${fmt(stock.latest_close)} · ${stock.signal_count || (stock.signals || []).length} 个信号</span>
             <span class="signal-tags">${tags}</span>
           </button>
         `;
@@ -1224,6 +1286,8 @@
         <div class="detail-row"><span>股票</span><b>${escapeHtml(payload.stock_name || payload.display_code || "-")}</b></div>
         <div class="detail-row"><span>代码</span><b>${escapeHtml(payload.display_code || payload.code || "-")}</b></div>
         <div class="detail-row"><span>市场</span><b>${escapeHtml(payload.market || payload.stock?.market_label || "-")}</b></div>
+        <div class="detail-row"><span>行业</span><b>${escapeHtml(payload.industry || payload.stock?.industry || "-")}</b></div>
+        <div class="detail-row"><span>行业分类</span><b>${escapeHtml(payload.industry_classification || payload.stock?.industry_classification || "-")}</b></div>
         <div class="detail-row"><span>命中信号</span><b>${buyCount} 买 / ${sellCount} 卖</b></div>
       `;
     }
@@ -1444,6 +1508,7 @@
         stocks = payload.stocks || [];
         renderOverview(payload);
         populateTypeFilter();
+        populateIndustryFilter();
         renderStockList();
         if (!stocks.length) {
           showMessage("最近一次扫描没有命中买卖点股票。");
@@ -1458,7 +1523,7 @@
       }
     }
 
-    [searchInput, directionFilter, typeFilter].forEach(control => {
+    [searchInput, directionFilter, typeFilter, boardFilter, industryFilter].forEach(control => {
       control.addEventListener("input", () => {
         renderStockList();
         if (filteredStocks.length && !filteredStocks.some(stock => stock.code === selectedCode)) {

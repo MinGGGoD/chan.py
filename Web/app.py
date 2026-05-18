@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import sys
 import json
+import time
 from datetime import date, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -52,6 +53,9 @@ STOCKS_JSON_PATH = ROOT_DIR / "Dataset" / "stocks.json"
 SCAN_RESULTS_DIR = ROOT_DIR / "Web" / "data" / "scan_results"
 SCAN_LATEST_PATH = SCAN_RESULTS_DIR / "latest_scan.json"
 SCAN_ERRORS_PATH = SCAN_RESULTS_DIR / "errors.json"
+INDUSTRY_CACHE_PATH = ROOT_DIR / "Web" / "data" / "industry" / "stock_industry.json"
+CHART_LOAD_RETRIES = 3
+RETRYABLE_DATA_ERRORS = ("网络接收错误", "网络", "timeout", "timed out", "recv", "socket")
 
 
 def default_start() -> str:
@@ -136,6 +140,72 @@ def public_stock_record(record: dict[str, Any]) -> dict[str, Any]:
 
 def read_json_file(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_industry_cache() -> dict[str, Any] | None:
+    if not INDUSTRY_CACHE_PATH.exists():
+        return None
+    return read_json_file(INDUSTRY_CACHE_PATH)
+
+
+def industry_cache_meta(cache: dict[str, Any] | None) -> dict[str, Any]:
+    if not cache:
+        return {
+            "exists": False,
+            "generated_at": None,
+            "update_dates": [],
+            "record_count": 0,
+            "industries": [],
+        }
+    return {
+        "exists": True,
+        "generated_at": cache.get("generated_at"),
+        "query_date": cache.get("query_date"),
+        "source": cache.get("source"),
+        "update_dates": cache.get("update_dates") or [],
+        "record_count": cache.get("record_count") or 0,
+        "industries": cache.get("industries") or [],
+    }
+
+
+def lookup_industry(cache: dict[str, Any] | None, code: str | None, full_code: str | None = None) -> dict[str, Any] | None:
+    if not cache:
+        return None
+    stocks = cache.get("stocks") or {}
+    keys = []
+    if code:
+        code_text = str(code).strip().lower()
+        keys.extend([code_text, code_text.split(".", 1)[-1]])
+    if full_code:
+        full_code_text = str(full_code).strip().lower()
+        keys.extend([full_code_text, full_code_text.split(".", 1)[-1]])
+    for key in keys:
+        item = stocks.get(key)
+        if item:
+            return item
+    return None
+
+
+def apply_industry_fields(target: dict[str, Any], cache: dict[str, Any] | None) -> dict[str, Any]:
+    item = lookup_industry(cache, target.get("code") or target.get("display_code"), target.get("full_code"))
+    if not item:
+        target.setdefault("industry", "")
+        target.setdefault("industry_classification", "")
+        target.setdefault("industry_update_date", "")
+        return target
+    target["industry"] = item.get("industry") or ""
+    target["industry_classification"] = item.get("industry_classification") or ""
+    target["industry_update_date"] = item.get("industry_update_date") or ""
+    return target
+
+
+def enrich_scan_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    cache = load_industry_cache()
+    stocks = payload.get("stocks") or []
+    for stock in stocks:
+        apply_industry_fields(stock, cache)
+    payload["industry_cache"] = industry_cache_meta(cache)
+    return payload
 
 
 def safe_scan_stock_filename(value: str) -> str:
@@ -630,6 +700,11 @@ def build_pyecharts_option(payload: dict[str, Any]) -> dict[str, Any]:
     return option
 
 
+def is_retryable_data_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(keyword.lower() in message for keyword in RETRYABLE_DATA_ERRORS)
+
+
 def fallback_stock_payload(code: str) -> dict[str, Any]:
     display_code = code.split(".", 1)[-1]
     market = code.split(".", 1)[0] if "." in code else ""
@@ -696,15 +771,27 @@ def build_chart_payload(code: str, level: str, start: str, end: str) -> dict[str
     stock = get_stock_by_code(code)
     stock_payload = public_stock_record(stock) if stock else fallback_stock_payload(code)
     try:
-        chan = CChan(
-            code=code,
-            begin_time=start,
-            end_time=end,
-            data_src=DATA_SRC.BAO_STOCK,
-            lv_list=[LEVEL_MAP[level]],
-            config=build_config(),
-            autype=AUTYPE.QFQ,
-        )
+        last_exc: Exception | None = None
+        for attempt in range(1, CHART_LOAD_RETRIES + 1):
+            try:
+                chan = CChan(
+                    code=code,
+                    begin_time=start,
+                    end_time=end,
+                    data_src=DATA_SRC.BAO_STOCK,
+                    lv_list=[LEVEL_MAP[level]],
+                    config=build_config(),
+                    autype=AUTYPE.QFQ,
+                )
+                break
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= CHART_LOAD_RETRIES or not is_retryable_data_error(exc):
+                    raise
+                time.sleep(0.5 * attempt)
+        else:
+            assert last_exc is not None
+            raise last_exc
         return build_chart_payload_from_chan(chan, code, level, start, end, stock_payload)
     except Exception as exc:
         if stock_payload["asset_type"] == "etf":
@@ -758,6 +845,7 @@ def api_scan_latest():
 
     try:
         payload = read_json_file(SCAN_LATEST_PATH)
+        payload = enrich_scan_payload(payload)
         return jsonify({
             "success": True,
             "exists": True,
@@ -781,6 +869,11 @@ def api_scan_stock(stock_code: str):
                 "error": "未找到该股票的扫描明细，请重新运行扫描脚本。",
             }), 404
         payload = read_json_file(stock_path)
+        cache = load_industry_cache()
+        apply_industry_fields(payload, cache)
+        if isinstance(payload.get("stock"), dict):
+            apply_industry_fields(payload["stock"], cache)
+        payload["industry_cache"] = industry_cache_meta(cache)
         payload["success"] = True
         return jsonify(payload)
     except ValueError as exc:
